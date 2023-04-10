@@ -58,7 +58,7 @@ class Emis3D(object):
         
         self.chisqVec, self.pvalVec, self.fitsBoloFirsts, self.fitsBoloSeconds,\
             self.channel_errs, self.preScaleVec =\
-            self.calc_pvals_JET(self.allRadDistsVec, BoloExpData = boloExpData)
+            self.calc_pvals(self.allRadDistsVec, BoloExpData = boloExpData)
         
         # take minimum pval RadDist, which is the closest fit
         if min(self.pvalVec) == 1.0: # covers case where Pvals bottom out (no pval better than 3). Not Ideal.
