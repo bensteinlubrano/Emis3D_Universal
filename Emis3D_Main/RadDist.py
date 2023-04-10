@@ -203,6 +203,8 @@ class RadDist(object):
                     elif numpunc == 2:
                         EvalFirstPunc = 0.
                         EvalSecondPunc = 1.
+                    # the way this approach handles second punctures may have a problem here; the field line follower gets
+                    # called for phi larger than 2 pi (because that's enforced above I guess?). Should check this carefully before second paper
                     emission = self.evaluate(x,y,z, EvalFirstPunc, EvalSecondPunc)
                     emissumarray[numpunc-1, numbin] += emission
                     emissqsumarray[numpunc-1, numbin] += emission**2
@@ -279,12 +281,21 @@ class RadDist(object):
         
         for array in boloCameras:
             for channel in array.bolometers:
-                for foil in list(channel.bolometer_camera.foil_detectors):
-                    # the following line sets the number of rays to trace at once in parallel. Heimdall can apparently do 16.
-                    foil.render_engine.processes = 16
-                    # The following line sets the resolution of the sightline area viewed by each bolometer. Jack Lovell says this
-                    # number is reasonable.
-                    foil.pixel_samples = 1000
+                try:
+                    for foil in list(channel.bolometer_camera.foil_detectors):
+                        # the following line sets the number of rays to trace at once in parallel. Heimdall can apparently do 16.
+                        foil.render_engine.processes = 16
+                        # The following line sets the resolution of the sightline area viewed by each bolometer. Jack Lovell says this
+                        # number is reasonable.
+                        foil.pixel_samples = 1000
+                except:
+                    # this case is for the JET KB5H, 5V, and 1 bolometers which don't have the extra bolometer_camera layer
+                    for foil in list(channel.foil_detectors):
+                        # the following line sets the number of rays to trace at once in parallel. Heimdall can apparently do 16.
+                        foil.render_engine.processes = 16
+                        # The following line sets the resolution of the sightline area viewed by each bolometer. Jack Lovell says this
+                        # number is reasonable.
+                        foil.pixel_samples = 1000
         
         # The following ines define an emitting volume that the RadDist will evaluate functions are embedded in.
         # The parameters are set to encompass to entirety of the tokamak (this setup is for JET and smaller), and the -2.5 is to shift the
@@ -302,7 +313,11 @@ class RadDist(object):
             print("Observing bolometer array #" + str(arraynumber))
             arraynumber = arraynumber + 1
             for channel in array.bolometers:
-                observeVal = channel.bolometer_camera.observe()
+                try:
+                    observeVal = channel.bolometer_camera.observe()
+                except:
+                    # this case is for the JET KB5H, 5V, and 1 bolometers which don't have the extra bolometer_camera layer
+                    observeVal = channel.observe()
                 if len(observeVal) == 1:
                     observeVal = observeVal[0]
                 array_powers.append(observeVal)
@@ -318,7 +333,11 @@ class RadDist(object):
             arraynumber = arraynumber + 1
             for channel in array.bolometers:
                 if self.distType == "Helical":
-                    observeVal = channel.bolometer_camera.observe()
+                    try:
+                        observeVal = channel.bolometer_camera.observe()
+                    except:
+                    # this case is for the JET KB5H, 5V, and 1 bolometers which don't have the extra bolometer_camera layer
+                        observeVal = channel.observe()
                     if len(observeVal) == 1:
                         observeVal = observeVal[0]
                 else:
@@ -415,7 +434,7 @@ class Helical(RadDist):
         
         if Mode == "Build":
             self.tokamak.set_fieldline(StartR = self.startR, StartZ = self.startZ,\
-                                       StartPhi = self.tokamak.injectionPhiTor)
+                StartPhi = self.tokamak.injectionPhiTor, FlineShotNumber = self.shotnumber)
         
     def evaluate(self, x,y,z, EvalFirstPunc, EvalSecondPunc):
         # Return the emissivity (W/m^3/rad) at the point (x,y,z) according to this

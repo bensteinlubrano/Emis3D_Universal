@@ -15,7 +15,11 @@ from raysect.primitive import Box, Subtract
 from raysect.optical import World
 from raysect.optical.material import AbsorbingSurface
 
-from cherab.tools.observers import BolometerCamera, BolometerSlit, BolometerFoil
+try:
+    from cherab.tools.observers import BolometerCamera, BolometerSlit, BolometerFoil
+except:
+    # Some versions of cherab these objects are inside a file called bolometry, some not... This version is jack lovell's Cherab-stable on JET
+    from cherab.tools.observers.bolometry import BolometerCamera, BolometerSlit, BolometerFoil
 
 from scipy.spatial.transform import Rotation as Rot
 import configparser
