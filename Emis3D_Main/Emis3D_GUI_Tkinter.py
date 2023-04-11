@@ -121,19 +121,23 @@ class Emis3D_GUI(object):
         controlFrame.grid(column=0, row=0, sticky="NW")
         plotsFrame.grid(column=0, row=1, sticky="NW")
         
-        shotnumber_prompt = ttk.Label(controlFrame, text="Enter Shot Number")
-        shotnumber_prompt.grid(column=0, row=0, padx=30, pady=10)
-        
-        self.shotnumberEntryOneTimestep = ttk.Entry(controlFrame)
-        self.shotnumberEntryOneTimestep.grid(column=0, row=1, padx=30, pady=10)
-        self.shotnumberEntryOneTimestep.insert(tk.END, '95709')
+        if self.comparingTo == "Experiment":
+            shotnumber_prompt = ttk.Label(controlFrame, text="Enter Shot Number")
+            shotnumber_prompt.grid(column=0, row=0, padx=30, pady=10)
+            
+            self.shotnumberEntryOneTimestep = ttk.Entry(controlFrame)
+            self.shotnumberEntryOneTimestep.grid(column=0, row=1, padx=30, pady=10)
+            self.shotnumberEntryOneTimestep.insert(tk.END, '95709')
         
         etime_prompt = ttk.Label(controlFrame, text="Enter Evaluation Time")
         etime_prompt.grid(column=1, row=0, padx=30, pady=10)
         
         self.etimeEntry = ttk.Entry(controlFrame)
         self.etimeEntry.grid(column=1, row=1, padx=30, pady=10)
-        self.etimeEntry.insert(tk.END, '50.93')
+        if self.comparingTo == "Experiment":
+            self.etimeEntry.insert(tk.END, '50.93')
+        elif self.comparingTo == "Simulation":
+            self.etimeEntry.insert(tk.END, '0')
         
         type1_prompt = ttk.Label(controlFrame, text="Enter RadDist Type 1")
         type1_prompt.grid(column=2, row=0, padx=30, pady=10)
@@ -179,33 +183,34 @@ class Emis3D_GUI(object):
         resultsFrame.grid(column=1, row=0, sticky="NW")
         plotsFrame.grid(column=0, row=2, sticky="NW")
         
-        shotnumber_prompt = ttk.Label(controlFrame, text="Enter Shot Number")
-        shotnumber_prompt.grid(column=0, row=0, padx=30, pady=10)
+        if self.comparingTo == "Experiment":
+            shotnumber_prompt = ttk.Label(controlFrame, text="Enter Shot Number")
+            shotnumber_prompt.grid(column=0, row=0, padx=30, pady=10)
+            
+            self.shotnumberEntryRadPowerOverview = ttk.Entry(controlFrame)
+            self.shotnumberEntryRadPowerOverview.grid(column=0, row=1, padx=30, pady=10)
+            self.shotnumberEntryRadPowerOverview.insert(tk.END, '95709')
         
-        self.shotnumberEntryRadPowerOverview = ttk.Entry(controlFrame)
-        self.shotnumberEntryRadPowerOverview.grid(column=0, row=1, padx=30, pady=10)
-        self.shotnumberEntryRadPowerOverview.insert(tk.END, '95709')
+            start_time_prompt = ttk.Label(controlFrame, text="Enter Start Time")
+            start_time_prompt.grid(row=0, column=1, padx=30, pady=10)
+            
+            self.startTimeEntry = ttk.Entry(controlFrame)
+            self.startTimeEntry.grid(row=1, column=1, padx=30, pady=10)
+            self.startTimeEntry.insert(tk.END, '50.947')
+            
+            end_time_prompt = ttk.Label(controlFrame, text="Enter End Time")
+            end_time_prompt.grid(row=0, column=2, padx=30, pady=10)
+            
+            self.endTimeEntry = ttk.Entry(controlFrame)
+            self.endTimeEntry.grid(row=1, column=2, padx=30, pady=10)
+            self.endTimeEntry.insert(tk.END, '50.973')
         
-        start_time_prompt = ttk.Label(controlFrame, text="Enter Start Time")
-        start_time_prompt.grid(row=0, column=1, padx=30, pady=10)
-        
-        self.startTimeEntry = ttk.Entry(controlFrame)
-        self.startTimeEntry.grid(row=1, column=1, padx=30, pady=10)
-        self.startTimeEntry.insert(tk.END, '50.947')
-        
-        end_time_prompt = ttk.Label(controlFrame, text="Enter End Time")
-        end_time_prompt.grid(row=0, column=2, padx=30, pady=10)
-        
-        self.endTimeEntry = ttk.Entry(controlFrame)
-        self.endTimeEntry.grid(row=1, column=2, padx=30, pady=10)
-        self.endTimeEntry.insert(tk.END, '50.973')
-        
-        num_times_prompt = ttk.Label(controlFrame, text="Enter Number of Timesteps")
-        num_times_prompt.grid(row=0, column=3, padx=30, pady=10)
-        
-        self.numTimesEntry = ttk.Entry(controlFrame)
-        self.numTimesEntry.grid(row=1, column=3, padx=30, pady=10)
-        self.numTimesEntry.insert(tk.END, '53')
+            num_times_prompt = ttk.Label(controlFrame, text="Enter Number of Timesteps")
+            num_times_prompt.grid(row=0, column=3, padx=30, pady=10)
+            
+            self.numTimesEntry = ttk.Entry(controlFrame)
+            self.numTimesEntry.grid(row=1, column=3, padx=30, pady=10)
+            self.numTimesEntry.insert(tk.END, '53')
         
         pval_mult_prompt = ttk.Label(controlFrame, text="Enter P Value")
         pval_mult_prompt.grid(row=0, column=4, padx=30, pady=10)
@@ -284,9 +289,9 @@ class Emis3D_GUI(object):
         self.upperBoundLabel.grid(row=2, column=0, padx=50, pady=5)
         
     def init_emis3D_oneTimestep(self):
-        shotnum = int(self.shotnumberEntryOneTimestep.get())
         
         if self.comparingTo == "Experiment":
+            shotnum = int(self.shotnumberEntryOneTimestep.get())
             self.emis = self.init_emis3D_experimental(Shotnumber=shotnum)
         elif self.comparingTo == "Simulation":
             self.emis = self.init_emis3D_simulational()
@@ -296,8 +301,10 @@ class Emis3D_GUI(object):
         self.plots_one_timestep(Container=Container)
         
     def plots_one_timestep(self, Container):
-        etime = float(self.etimeEntry.get()) # For JET load time in shot
-        #etime = int(self.etimeEntry.get()) # For SPARC load from simulated setup
+        if self.comparingTo == "Experiment":
+            etime = float(self.etimeEntry.get())
+        elif self.comparingTo == "Simulation":
+            etime = int(self.etimeEntry.get())
         self.emis.calc_fits(Etime = etime)
         
         distType1 = str(self.type1entry.get())
@@ -384,18 +391,15 @@ class Emis3D_GUI(object):
         self.kb5ChannelsCanvas.get_tk_widget().grid(row=Row, column=Column)
         
     def init_emis3D_radPowerOverview(self):
-        shotnum = int(self.shotnumberEntryRadPowerOverview.get())
         
         if self.comparingTo == "Experiment":
+            shotnum = int(self.shotnumberEntryRadPowerOverview.get())
             self.emis = self.init_emis3D_experimental(Shotnumber=shotnum)
         elif self.comparingTo == "Simulation":
             self.emis = self.init_emis3D_simulational()
         
     def display_tot_rad_power(self, PlotsContainer, ResultsContainer):
         self.init_emis3D_radPowerOverview()
-        startTime = float(self.startTimeEntry.get())
-        endTime = float(self.endTimeEntry.get())
-        numTimes = int(self.numTimesEntry.get())
         pvalCutoff = float(self.pvalMultEntry.get())
         
         if self.movePeakToggle2.config('relief')[-1] == 'sunken':
@@ -403,9 +407,15 @@ class Emis3D_GUI(object):
         else:
             movePeak=False
         
-        self.emis.calc_tot_rad_from_exp(\
-                StartTime = startTime, EndTime=endTime, NumTimes=numTimes,\
-                ErrorPool=True, PvalCutoff=pvalCutoff, MovePeak=movePeak)
+        if self.comparingTo == "Experiment":
+            startTime = float(self.startTimeEntry.get())
+            endTime = float(self.endTimeEntry.get())
+            numTimes = int(self.numTimesEntry.get())
+            self.emis.calc_tot_rad_from_exp(\
+                    StartTime = startTime, EndTime=endTime, NumTimes=numTimes,\
+                    ErrorPool=True, PvalCutoff=pvalCutoff, MovePeak=movePeak)
+        elif self.comparingTo == "Simulation":
+            self.emis.calc_tot_rad(ErrorPool=True, PvalCutoff=pvalCutoff, MovePeak=movePeak)
         
         self.totRadPowerLabel.pack_forget()
         self.totRadPowerLabel = ttk.Label(ResultsContainer, text="Total Radiated Energy = " +\
