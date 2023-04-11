@@ -6,7 +6,8 @@ Created on Mon Apr 10 15:55:26 2023
 @author: br0148
 """
 
-from os.path import dirname, realpath, join
+from os import listdir
+from os.path import dirname, realpath, isfile, join
         
 FILE_PATH = dirname(realpath(__file__))
 EMIS3D_PARENT_DIRECTORY = dirname(dirname(FILE_PATH))
@@ -45,6 +46,20 @@ class Emis3D(object):
         self.minPreScaleList = None
         self.minRadDistFits = None
         
+    def load_raddists(self, TokamakName):
+        
+        self.allRadDistsVec = []
+        
+        # returns all files in RadDist_Saves folder
+        onlyfiles = [f for f in listdir(self.raddist_saves_directory)\
+                     if isfile(join(self.raddist_saves_directory, f))]
+        
+        for distIndx in range(len(onlyfiles)):
+            loadFileName = join(self.raddist_saves_directory,onlyfiles[distIndx])
+            radDist = self.load_single_raddist(LoadFileName = loadFileName)
+            
+            self.allRadDistsVec.append(radDist)
+            
     # calculates reduced chi^2 values for radiation structure library for one timestep
     def calc_fits(self, Etime, ErrorPool = False, PvalCutoff = None):
         
