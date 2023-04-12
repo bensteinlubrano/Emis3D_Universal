@@ -16,6 +16,9 @@ EMIS3D_UNIVERSAL_MAIN_DIRECTORY = join(EMIS3D_PARENT_DIRECTORY,\
 EMIS3D_INPUTS_DIRECTORY = join(EMIS3D_PARENT_DIRECTORY, "Emis3D_JET", "Emis3D_Inputs")
 
 import numpy as np
+from Util import RedChi2_To_Pvalue
+from scipy.optimize import minimize
+from copy import copy
 
 class Emis3D(object):
     
@@ -59,6 +62,60 @@ class Emis3D(object):
             radDist = self.load_single_raddist(LoadFileName = loadFileName)
             
             self.allRadDistsVec.append(radDist)
+            
+    def calc_pvals(self, RadDistVec, BoloExpData, PowerUpperBound = 6000.0):
+        
+        print("Calculating P-Values")
+        
+        numChannels = np.sum([len(x) for x in BoloExpData])
+        
+        bolo_exp = self.rearrange_powers_array(Powers = BoloExpData)
+        
+        chisqlist = []
+        pValList = []
+        fitsBoloFirsts = []
+        fitsBoloSeconds = []
+        preScales = []
+        channel_errs = []
+        
+        # this is for different errors at each toroidal location
+        for i in range(self.numTorLocs):
+            expMax = np.max(bolo_exp[i])
+            channel_errs.append(np.array([0.1 * expMax] * len(bolo_exp[i])))
+
+        for radDist in RadDistVec:
+            synth_powers_p1 = self.rearrange_powers_array(copy(radDist.boloCameras_powers))
+            synth_powers_p2 = self.rearrange_powers_array(copy(radDist.boloCameras_powers_2nd))
+            
+            # uniformly pre-scales synthetic powers to same order of magnitude as experimental
+            # data, to put in range of fitting algorithm
+            preScaleFactorNum = np.sum([np.sum(bolo_exp[indx]) for indx in range(len(bolo_exp))])
+            preScaleFactorDenom = np.sum([np.sum(synth_powers_p1[indx]) for indx in range(len(synth_powers_p1))])
+            preScaleFactor = preScaleFactorNum / preScaleFactorDenom
+                
+            for i in range(self.numTorLocs):
+                synth_powers_p1[i] = np.array(synth_powers_p1[i]) * preScaleFactor
+                synth_powers_p2[i] = np.array(synth_powers_p2[i]) * preScaleFactor
+            
+            p0Firsts, p0Seconds, boundsFirsts, boundsSeconds, fittingFunc =\
+                self.fitting_func_setup(Bolo_exp=bolo_exp, Synth_powers_p1=synth_powers_p1,\
+                    Synth_powers_p2=synth_powers_p2, Channel_errs=channel_errs, PowerUpperBound=PowerUpperBound)
+
+            res = minimize(fittingFunc, p0Firsts + p0Seconds, bounds=boundsFirsts+boundsSeconds)
+            res.fun
+            fitsBoloFirsts.append(res.x[:self.numTorLocs])
+            fitsBoloSeconds.append(res.x[self.numTorLocs:])
+            preScales.append(preScaleFactor)
+            
+            if radDist.distType == "Helical":
+                degree_of_freedom = numChannels - (len(p0Firsts) + len(p0Seconds) + 1)
+            else:
+                degree_of_freedom = numChannels - (len(p0Firsts) + 1)
+            chisq = (res.fun)/degree_of_freedom
+            chisqlist.append(chisq)
+            pValList.append(RedChi2_To_Pvalue(chisq, degree_of_freedom))
+        
+        return chisqlist, pValList, fitsBoloFirsts, fitsBoloSeconds, channel_errs, preScales
             
     # calculates reduced chi^2 values for radiation structure library for one timestep
     def calc_fits(self, Etime, ErrorPool = False, PvalCutoff = None):
