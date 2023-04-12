@@ -146,8 +146,6 @@ class Emis3D(object):
         self.minpval = self.pvalVec[self.minInd]
         self.minRadDist = self.allRadDistsVec[self.minInd]
         
-        # Not yet set up for SPARC
-        
         if ErrorPool:
             self.errorDists=[]
             self.errorFitsFirsts=[]
@@ -169,3 +167,71 @@ class Emis3D(object):
                 self.errorFitsSeconds.append(self.bestFitsBoloSeconds)
                 self.errorPrescales.append(self.minPreScale)
             print(" pool size is " + str(poolsize))
+            
+    def calc_tot_rad(self, TimePerStep, NumTimes = 11,\
+                     ErrorPool = False, PvalCutoff = 0.9545, MovePeak=False):
+        # finds total radiated energy for entire shot. Stores timestep-by-timestep best fit
+        # information in the process, and error bound information if ErrorPool=True
+        
+        self.radPowers = []
+        self.tpfs = []
+        self.minRadDistList = []
+        self.minPreScaleList = []
+        self.minFitsFirsts = []
+        self.minFitsSeconds = []
+        self.minchisqList = []
+        self.minpvalList = []
+        self.minTorFitCoeffs = []
+        
+        wrad = 0.0
+        upperwrad = 0.0
+        lowerwrad = 0.0
+        self.accumWrads = []
+        self.upperAccumWrads = []
+        self.lowerAccumWrads = []
+        
+        self.errorDists = []
+        self.lowerBoundRadPowers = []
+        self.upperBoundRadPowers = []
+        self.lowerBoundTpfs = []
+        self.upperBoundTpfs = []
+        
+        for timeIndex in range(NumTimes):
+            print(" ")
+            print("calculating time " + str(timeIndex) + "/" + str(NumTimes))
+            
+            self.calc_fits(Etime=self.radPowerTimes[timeIndex], ErrorPool=ErrorPool, PvalCutoff=PvalCutoff)
+                
+            print("Best Fit RadDist Type = " + self.minDistType)
+            self.minRadDistList.append(self.minRadDist)
+            self.minPreScaleList.append(self.minPreScale)
+            self.minFitsFirsts.append(self.bestFitsBoloFirsts)
+            self.minFitsSeconds.append(self.bestFitsBoloSeconds)
+            self.minchisqList.append(self.minchisq)
+            self.minpvalList.append(self.minpval)
+                
+            radPower, tpf, torFitCoeffs =\
+                self.calc_rad_power(RadDist=self.minRadDist, PreScale=self.minPreScale,\
+                        FitsFirsts=self.bestFitsBoloFirsts, FitsSeconds=self.bestFitsBoloSeconds,\
+                        MovePeak=MovePeak)
+                
+            self.radPowers.append(radPower)
+            self.tpfs.append(tpf)
+            self.minTorFitCoeffs.append(torFitCoeffs)
+                
+            print("Rad Power in GW is " + str(radPower * 1e-9))
+            print("TPF is " + str(tpf))
+            
+            if ErrorPool:
+                self.calc_rad_error(PvalCutoff=PvalCutoff, MovePeak=MovePeak)
+            
+            wrad = wrad + (radPower * TimePerStep)
+            upperwrad = upperwrad + (self.upperBoundPower * TimePerStep)
+            lowerwrad = lowerwrad + (self.lowerBoundPower*TimePerStep)
+            self.accumWrads.append(wrad)
+            self.upperAccumWrads.append(upperwrad)
+            self.lowerAccumWrads.append(lowerwrad)
+            
+        self.totWrad = self.accumWrads[-1]
+        self.upperTotWrad = self.upperAccumWrads[-1]
+        self.lowerTotWrad = self.lowerAccumWrads[-1]
