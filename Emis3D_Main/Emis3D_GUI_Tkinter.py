@@ -310,8 +310,8 @@ class Emis3D_GUI(object):
         distType1 = str(self.type1entry.get())
         self.display_fits_array_type1(Container=Container, Emis3DObject = self.emis,\
             Etime = etime, PlotDistType=distType1)
-        #self.display_powers_array_type1(Container=Container, Emis3DObject = self.emis,\
-        #    Etime = etime, PlotDistType=distType1)
+        self.display_powers_array_type1(Container=Container, Emis3DObject = self.emis,\
+            Etime = etime, PlotDistType=distType1)
         
         distType2 = str(self.type2entry.get())
         self.display_fits_array_type2(Container=Container, Emis3DObject = self.emis,\
