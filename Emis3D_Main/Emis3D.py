@@ -294,8 +294,8 @@ class Emis3D(object):
         z = self.tokamakAMode.wallcurve.vertices[:,1]
         ax.plot(r,z, 'orange')
         
-        # Plot Q=1,2, and 3 surfaces
-        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=1.0)
+        # Plot Q=1.1,2, and 3 surfaces
+        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=1.1)
         ax.plot(r,z, "cyan")
         r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=2.0)
         ax.plot(r,z, "cyan")
@@ -384,7 +384,7 @@ class Emis3D(object):
         ax.plot(r,z, 'orange')
         
         # For plotting q surfaces
-        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=1.0)
+        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=1.1)
         ax.plot(r,z, "cyan")
         r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=2.0)
         ax.plot(r,z, "cyan")
