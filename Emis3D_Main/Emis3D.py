@@ -16,6 +16,7 @@ EMIS3D_UNIVERSAL_MAIN_DIRECTORY = join(EMIS3D_PARENT_DIRECTORY,\
 EMIS3D_INPUTS_DIRECTORY = join(EMIS3D_PARENT_DIRECTORY, "Emis3D_JET", "Emis3D_Inputs")
 
 import numpy as np
+import matplotlib.pyplot as plt
 from Util import RedChi2_To_Pvalue
 from scipy.optimize import minimize
 from copy import copy
@@ -235,3 +236,161 @@ class Emis3D(object):
         self.totWrad = self.accumWrads[-1]
         self.upperTotWrad = self.upperAccumWrads[-1]
         self.lowerTotWrad = self.lowerAccumWrads[-1]
+        
+    def plot_fits_array(self, Lengthx=3, Lengthy=4, Etime = 50.89, PlotDistType = "Helical"):
+        
+        if not self.pvalVec:
+            raise Exception("Must calculate p values before plotting fits")
+            
+        # Pull only RadDists of given type to be plotted
+        plotDistsVec = []
+        plotRVecs = []
+        plotZVecs = []
+        plotChisq = []
+        for distNum in range(len(self.allRadDistsVec)):
+            if self.allRadDistsVec[distNum].distType == PlotDistType:
+                thisRadDist = self.allRadDistsVec[distNum]
+                plotDistsVec.append(thisRadDist)
+                plotRVecs.append(thisRadDist.startR)
+                plotZVecs.append(thisRadDist.startZ)
+                plotChisq.append(self.chisqVec[distNum])
+            
+        # Create Figure
+        fig = plt.figure(figsize=(Lengthx, Lengthy))
+        ax = fig.add_subplot()
+        ax.set_aspect('equal')
+        ax.set_xlabel('$R$ (m)')
+        ax.set_ylabel('$Z$ (m)')
+        
+        # Create color contour of fits
+        levels = np.linspace(0, 40., num=20)
+        tcf = ax.tricontourf(plotRVecs, plotZVecs, plotChisq,\
+            levels=levels, cmap='gist_stern')
+        ax.plot(plotRVecs, plotZVecs, 'xk')
+        
+        # Add white x and circle around best fit
+        if self.minDistType == PlotDistType:
+            bestRadDist = self.allRadDistsVec[self.minInd]
+            r = bestRadDist.startR
+            z = bestRadDist.startZ
+            ax.plot(r, z, 'o', markeredgecolor='white', fillstyle='none', 
+                    markeredgewidth=3, markersize=40)
+            ax.plot(r, z, 'x', markeredgecolor='white')
+            
+        # Set plot dimensions
+        ax.set_xlim([self.tokamakAMode.majorRadius - (1.1*self.tokamakAMode.minorRadius),\
+                     self.tokamakAMode.majorRadius + (1.1*self.tokamakAMode.minorRadius)])
+        ax.set_ylim([(-2.4*self.tokamakAMode.minorRadius),\
+                     (2.4*self.tokamakAMode.minorRadius)])
+    
+        # Set plot title
+        ax.set_title(str(PlotDistType) + "s")
+        
+        # Set colorbar
+        fig.colorbar(tcf, ax=ax, label='$\chi^2_r$', shrink=0.5, format='%d')
+        
+        # Plot first wall curve
+        r = self.tokamakAMode.wallcurve.vertices[:,0]
+        z = self.tokamakAMode.wallcurve.vertices[:,1]
+        ax.plot(r,z, 'orange')
+        
+        # Plot Q=1,2, and 3 surfaces
+        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=1.0)
+        ax.plot(r,z, "cyan")
+        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=2.0)
+        ax.plot(r,z, "cyan")
+        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=3.0)
+        ax.plot(r,z, "cyan")
+        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval="Separatrix")
+        ax.plot(r,z, "cyan")
+        
+        return fig
+    
+    def plot_powers_array(self, Lengthx=3, Lengthy=4, Etime = 50.89, PlotDistType = "Helical",\
+                          MovePeak=False):
+        
+        if not self.pvalVec:
+            raise Exception("Must calculate p values before plotting powers")
+    
+        # Pull only RadDists of given type to be plotted
+        plotDistsVec = []
+        plotRVecs = []
+        plotZVecs = []
+        plotDistsRadPowers = []
+        for distNum in range(len(self.allRadDistsVec)):
+            if self.allRadDistsVec[distNum].distType == PlotDistType:
+                thisRadDist = self.allRadDistsVec[distNum]
+                plotDistsVec.append(thisRadDist)
+                plotRVecs.append(thisRadDist.startR)
+                plotZVecs.append(thisRadDist.startZ)
+                
+                radPower = self.calc_rad_power(RadDist=thisRadDist, PreScale=self.preScaleVec[distNum],\
+                    FitsFirsts=self.fitsBoloFirsts[distNum], FitsSeconds=self.fitsBoloSeconds[distNum],\
+                    MovePeak=MovePeak)[0]
+
+                plotDistsRadPowers.append(radPower)
+                
+        bestFitRadDist = self.allRadDistsVec[self.minInd]
+        bestFitRadPower = self.calc_rad_power(RadDist=bestFitRadDist, PreScale=self.preScaleVec[self.minInd],\
+                    FitsFirsts=self.fitsBoloFirsts[self.minInd], FitsSeconds=self.fitsBoloSeconds[self.minInd],\
+                    MovePeak=MovePeak)[0]
+        print("Best Fit Rad Power is " + str(bestFitRadPower / 1e9) + "GW")
+        
+        # Create Figure
+        fig = plt.figure(figsize=(Lengthx, Lengthy))
+        ax = fig.add_subplot()
+        ax.set_aspect('equal')
+        ax.set_xlabel('$R$ (m)')
+        ax.set_ylabel('$Z$ (m)')
+        
+        #This step removes very high outliers that screw up the plot
+        #medPower = np.median(plotDistsRadPowers)
+        
+        for i in range(len(plotDistsRadPowers)):
+            if plotDistsRadPowers[i] > (10.0 * bestFitRadPower):
+                plotDistsRadPowers[i] = 0.0
+        
+        # Create color contour of powers
+        levels = np.linspace(0, max(plotDistsRadPowers)/1e9, num=20)
+        tcf = ax.tricontourf(plotRVecs, plotZVecs, np.array(plotDistsRadPowers)/1e9,\
+            levels=levels, cmap='gist_stern')
+        ax.plot(plotRVecs, plotZVecs, 'xk')
+        
+        # Add white x and circle around best fit
+        if self.minDistType == PlotDistType:
+            bestRadDist = self.allRadDistsVec[self.minInd]            
+            
+            r = bestRadDist.startR
+            z = bestRadDist.startZ
+            ax.plot(r, z, 'o', markeredgecolor='white', fillstyle='none', 
+                    markeredgewidth=3, markersize=40)
+            ax.plot(r, z, 'x', markeredgecolor='white')
+        
+        # Set plot dimensions
+        ax.set_xlim([self.tokamakAMode.majorRadius - (1.1*self.tokamakAMode.minorRadius),\
+                     self.tokamakAMode.majorRadius + (1.1*self.tokamakAMode.minorRadius)])
+        ax.set_ylim([(-2.4*self.tokamakAMode.minorRadius),\
+                     (2.4*self.tokamakAMode.minorRadius)])
+    
+        # Set plot title
+        ax.set_title(str(PlotDistType) + "s")
+        
+        # Set colorbar
+        fig.colorbar(tcf, ax=ax, label='$P_{rad}$ (GW)', shrink=0.5, format='%.2f')
+        
+        # For plotting first wall curve
+        r = self.tokamakAMode.wallcurve.vertices[:,0]
+        z = self.tokamakAMode.wallcurve.vertices[:,1]
+        ax.plot(r,z, 'orange')
+        
+        # For plotting q surfaces
+        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=1.0)
+        ax.plot(r,z, "cyan")
+        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=2.0)
+        ax.plot(r,z, "cyan")
+        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=3.0)
+        ax.plot(r,z, "cyan")
+        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval="Separatrix")
+        ax.plot(r,z, "cyan")
+        
+        return fig
