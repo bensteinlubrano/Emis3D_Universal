@@ -169,6 +169,40 @@ class Emis3D(object):
                 self.errorPrescales.append(self.minPreScale)
             print(" pool size is " + str(poolsize))
             
+    def calc_rad_error(self, PvalCutoff, MovePeak):
+        # finds error bar ranges of rad power and tpf for a single timestep
+        
+        if not self.errorDists:
+            raise Exception("Must run calc_fits with ErrorPool=True before calc_rad_error")
+        
+        errorRadPowers = []
+        errorTpfs = []
+        for distNum in range(len(self.errorDists)):
+            try:
+                errorRadPower, errorTpf, errorToroidalFitCoeffs =\
+                    self.calc_rad_power(RadDist=self.errorDists[distNum], PreScale=self.errorPrescales[distNum],\
+                        FitsFirsts=self.errorFitsFirsts[distNum], FitsSeconds=self.errorFitsSeconds[distNum],\
+                        MovePeak=MovePeak)
+                errorRadPowers.append(errorRadPower)
+                errorTpfs.append(errorTpf)
+            except:
+                print("The toroidal distribution fitting of \
+                      a helical distribution in pool of reasonable fits \
+                      was unable to converge at this time")
+        
+        self.lowerBoundPower = min(errorRadPowers)
+        self.upperBoundPower = max(errorRadPowers)
+        self.lowerBoundTpf = min(errorTpfs)
+        self.upperBoundTpf = max(errorTpfs)
+            
+        self.lowerBoundRadPowers.append(self.lowerBoundPower)
+        self.upperBoundRadPowers.append(self.upperBoundPower)
+        self.lowerBoundTpfs.append(self.lowerBoundTpf)
+        self.upperBoundTpfs.append(self.upperBoundTpf)
+            
+        print("Lower Bound Rad Power is " + str(self.lowerBoundPower))
+        print("Upper Bound Rad Power is " + str(self.upperBoundPower))
+            
     def calc_tot_rad(self, TimePerStep, NumTimes = 11,\
                      ErrorPool = False, PvalCutoff = 0.9545, MovePeak=False):
         # finds total radiated energy for entire shot. Stores timestep-by-timestep best fit
