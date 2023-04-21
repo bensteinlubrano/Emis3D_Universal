@@ -15,8 +15,10 @@ EMIS3D_UNIVERSAL_MAIN_DIRECTORY = join(EMIS3D_PARENT_DIRECTORY,\
     "Emis3D_Universal", "Emis3D_Main")
 EMIS3D_INPUTS_DIRECTORY = join(EMIS3D_PARENT_DIRECTORY, "Emis3D_JET", "Emis3D_Inputs")
 
+import math
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FormatStrFormatter
 from Util import RedChi2_To_Pvalue
 from scipy.optimize import minimize
 from copy import copy
@@ -390,5 +392,67 @@ class Emis3D(object):
             PlotData=np.array(plotDistsRadPowers)/1e9, Levels=levels,\
             Lengthx=Lengthx, Lengthy=Lengthy, Etime=Etime,\
             ColorBarLabel='$P_{rad}$ (GW)', PlotDistType = PlotDistType)
+        
+        return fig
+    
+    def plot_fits_channels(self, Etime = 50.89, AsBrightness = True):
+        
+        bolo_exp, synthArrayFirst, synthArraySecond = self.plot_fits_data_organization(Etime=Etime)
+        
+        fig, axs = plt.subplots(self.numTorLocs, 1, figsize=(3,2*self.numTorLocs))
+        
+        channel_errs = self.channel_errs
+        
+        for numTor in range(self.numTorLocs):
+            ax = axs[numTor]
+    
+            #Remove error bars that are larger than measurement itself, just for plotting
+            for errIndex in range(len(channel_errs[numTor])):
+                if abs(channel_errs[numTor][errIndex]) > abs(bolo_exp[numTor][errIndex]):
+                    channel_errs[numTor][errIndex] = 0.0
+                    
+            # convert to power per m^2
+            if AsBrightness:
+                for i in range(len(bolo_exp[numTor])):
+                    bolo_exp[numTor][i] = bolo_exp[numTor][i] * 4.0 * math.pi / self.bolo_etendues[numTor][i]
+                    synthArrayFirst[numTor][i] = synthArrayFirst[numTor][i] * 4.0 * math.pi / self.bolo_etendues[numTor][i]
+                    # only works if there is a second puncture, otherwise length of list is wrong
+                    try:
+                        synthArraySecond[numTor][i] = synthArraySecond[numTor][i] * 4.0 * math.pi / self.bolo_etendues[numTor][i]
+                    except:
+                        pass
+                
+
+                # for MW / m^2
+                ax.set_ylabel(r"Power Location " + str(numTor) + " $(MW/m^2)$")
+                bolo_exp[numTor] = [x * 1e-6 for x in bolo_exp[numTor]]
+                channel_errs[numTor] = [x * 1e-6 for x in channel_errs[numTor]]    
+                synthArrayFirst[numTor] = [x * 1e-6 for x in synthArrayFirst[numTor]]
+                try:
+                    synthArraySecond[numTor] = [x * 1e-6 for x in synthArraySecond[numTor]]
+                except:
+                    pass
+            
+            else:
+                # for milliwatts
+                ax.set_ylabel(r"Power Location " + str(numTor) + " $(mW)$")
+                bolo_exp[numTor] = [x * 1e3 for x in bolo_exp[numTor]]
+                channel_errs[numTor] = [x * 1e3 for x in channel_errs[numTor]]    
+                synthArrayFirst[numTor] = [x * 1e3 for x in synthArrayFirst[numTor]]    
+                synthArraySecond[numTor] = [x * 1e3 for x in synthArraySecond[numTor]] 
+            
+            channelNum = range(len(bolo_exp[numTor]))
+            ax.errorbar(channelNum, bolo_exp[numTor], yerr=channel_errs[numTor], label='Experiment', color='blue')
+            ax.plot(channelNum, synthArrayFirst[numTor], '-s', label='1st Puncture', color='gray')
+            try:
+                ax.plot(channelNum, synthArraySecond[numTor], '-x', label='2nd Puncture', color='gray')
+                ax.plot(channelNum, ([synthArrayFirst[numTor][i] + synthArraySecond[numTor][i]\
+                    for i in range(len(synthArrayFirst[numTor]))]),\
+                    '-o', label='Full Synthetic', color='green')
+            except:
+                pass
+            ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        
+        plt.tight_layout()
         
         return fig
