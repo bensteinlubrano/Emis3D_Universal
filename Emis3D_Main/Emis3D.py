@@ -531,7 +531,7 @@ class Emis3D(object):
         
         plt.close(fig)
         
-    def save_synth_contour_plot(self, StartTime, EndTime, ArrayNum, PreviousArrayNum,\
+    def save_synth_contour_plot(self, ArrayNum, PreviousArrayNum,\
                            SaveName, SaveFolder, NumChannels=None, LowerBound=1e4):
         
         numTimes = len(self.radPowerTimes)
@@ -574,17 +574,24 @@ class Emis3D(object):
             SaveName = SaveName,\
             SaveFolder = SaveFolder)
         
-    def save_exp_contour_plot(self, StartTime, EndTime, ArrayNum, Title,\
-                              SaveName, SaveFolder, EndChannel=None, DeleteChannels=None):
+    def save_exp_contour_plot(self, ArrayNum, Title, SaveName, SaveFolder,\
+        StartTime=None, EndTime=None, EndChannel=None, DeleteChannels=None):
+        
+        if StartTime==None and EndTime==None:
+            startTime = self.radPowerTimes[0]
+            endTime = self.radPowerTimes[-1]
+        else:
+            startTime=StartTime
+            endTime=EndTime
         
         if EndChannel != None:
-            expData = self.load_bolo_exp_timerange(StartTime=StartTime, EndTime=EndTime,\
+            expData = self.load_bolo_exp_timerange(StartTime=startTime, EndTime=endTime,\
                 AsBrightnesses=True)[ArrayNum][:EndChannel]
         else:
-            expData = self.load_bolo_exp_timerange(StartTime=StartTime, EndTime=EndTime,\
+            expData = self.load_bolo_exp_timerange(StartTime=startTime, EndTime=endTime,\
             AsBrightnesses=True)[ArrayNum]
             
-        expTimebase = self.load_bolo_timebase_range(StartTime=StartTime, EndTime=EndTime)[ArrayNum]
+        expTimebase = self.load_bolo_timebase_range(StartTime=startTime, EndTime=endTime)[ArrayNum]
         
         if DeleteChannels != None:
             for indx in range(len(DeleteChannels)):

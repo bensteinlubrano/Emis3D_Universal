@@ -262,7 +262,7 @@ class Emis3D_GUI(object):
         self.movePeakToggle2.config(command=peakToggle)
         self.movePeakToggle2.grid(row=1, column=2, padx=30, pady=10)
         
-        make_contours_prompt = ttk.Label(controlFrame2, text="Build KB5 Contour Plots")
+        make_contours_prompt = ttk.Label(controlFrame2, text="Build Bolo Contour Plots")
         make_contours_prompt.grid(row=0, column=3, padx=30, pady=10)
         
         self.makeBoloContoursToggle = tk.Button(controlFrame2, text="No", width=12, relief="raised")
@@ -388,13 +388,13 @@ class Emis3D_GUI(object):
         fig = Emis3DObject.plot_fits_channels(Etime = Etime)
         
         try: 
-            self.kb5ChannelsCanvas.get_tk_widget().pack_forget()
+            self.boloChannelsCanvas.get_tk_widget().pack_forget()
         except: 
             pass    
-        self.kb5ChannelsCanvas = FigureCanvasTkAgg(fig, master=Container)
+        self.boloChannelsCanvas = FigureCanvasTkAgg(fig, master=Container)
         plt.close(fig)
-        self.kb5ChannelsCanvas.draw()
-        self.kb5ChannelsCanvas.get_tk_widget().grid(row=Row, column=Column)
+        self.boloChannelsCanvas.draw()
+        self.boloChannelsCanvas.get_tk_widget().grid(row=Row, column=Column)
         
     def init_emis3D_radPowerOverview(self):
         
@@ -444,11 +444,11 @@ class Emis3D_GUI(object):
         
         self.display_plot_overview(Container=Container, Emis3DObject = Emis3DObject)
         #self.display_kb1_powers(Container=Container, Emis3DObject = Emis3DObject)
+        if self.makeBoloContoursToggle.config('relief')[-1] == 'sunken':
+            Emis3DObject.save_all_contour_plots()
+        """
         if self.makeMovieToggle.config('relief')[-1] == 'sunken':
             Emis3DObject.make_unwrapped_movie(MovePeak=MovePeak)
-        """
-        if self.makeBoloContoursToggle.config('relief')[-1] == 'sunken':
-            Emis3DObject.make_best_fits_contour_plots()
         if self.makeCrossSecsToggle.config('relief')[-1] == 'sunken':
             Emis3DObject.make_crossSec_movie(MovePeak=MovePeak)
         """
