@@ -171,6 +171,47 @@ class Emis3D(object):
                 self.errorPrescales.append(self.minPreScale)
             print(" pool size is " + str(poolsize))
             
+    def gaussian(self, Phi, Sigma, Mu, Amplitude, OffsetVert):
+            coeff = 1.0 / (Sigma * math.sqrt(2.0 * math.pi))
+            exponential = np.exp(-((Phi - Mu) / Sigma)**2 / 2.0)
+            return (Amplitude * coeff * exponential) + OffsetVert
+    
+    def gaussian_no_coeff(self, Phi, Sigma, Mu, Amplitude, OffsetVert):
+            coeff = 1.0 / (Sigma * math.sqrt(2.0 * math.pi))
+            return self.gaussian(Phi=Phi, Sigma=Sigma, Mu=Mu,
+                                 Amplitude=Amplitude, OffsetVert=OffsetVert) / coeff
+    
+    # Returns an asymmetric gaussian. Implemented to handle arrays, since the curve_fit
+    # function seems to need that
+    def asymmetric_gaussian_arr(self, Phi, SigmaLeft, SigmaRight, Amplitude, Mu=None):
+        if hasattr(Mu, "__len__"):
+            mu=Mu
+        elif Mu==None:
+            mu = self.tokamakAMode.injectionPhiTor
+        else:
+            mu=Mu
+        
+        if hasattr(Phi, "__len__"): # check if Phi is array-like
+            yval = []
+            #for i in range(len(Phi)):
+            for phi in Phi:
+                #phi = Phi[i]
+                if phi < mu:
+                    yval.append(self.gaussian_no_coeff(Phi=phi, Sigma=SigmaLeft, Mu=mu,\
+                            Amplitude=Amplitude, OffsetVert=0.0))
+                else:
+                    yval.append(self.gaussian_no_coeff(Phi=phi, Sigma=SigmaRight, Mu=mu,\
+                            Amplitude=Amplitude, OffsetVert=0.0))
+        else:
+            if Phi < mu:
+                yval=self.gaussian_no_coeff(Phi=Phi, Sigma=SigmaLeft, Mu=mu,\
+                        Amplitude=Amplitude, OffsetVert=0.0)
+            else:
+                yval=self.gaussian_no_coeff(Phi=Phi, Sigma=SigmaRight, Mu=mu,\
+                        Amplitude=Amplitude, OffsetVert=0.0)   
+        
+        return yval
+            
     def calc_rad_error(self, PvalCutoff, MovePeak):
         # finds error bar ranges of rad power and tpf for a single timestep
         
@@ -408,8 +449,11 @@ class Emis3D(object):
     
             #Remove error bars that are larger than measurement itself, just for plotting
             for errIndex in range(len(channel_errs[numTor])):
-                if abs(channel_errs[numTor][errIndex]) > abs(bolo_exp[numTor][errIndex]):
-                    channel_errs[numTor][errIndex] = 0.0
+                try:
+                    if abs(channel_errs[numTor][errIndex]) > abs(bolo_exp[numTor][errIndex]):
+                        channel_errs[numTor][errIndex] = 0.0
+                except:
+                    pass
                     
             # convert to power per m^2
             if AsBrightness:
@@ -442,7 +486,10 @@ class Emis3D(object):
                 synthArraySecond[numTor] = [x * 1e3 for x in synthArraySecond[numTor]] 
             
             channelNum = range(len(bolo_exp[numTor]))
-            ax.errorbar(channelNum, bolo_exp[numTor], yerr=channel_errs[numTor], label='Experiment', color='blue')
+            try:
+                ax.errorbar(channelNum, bolo_exp[numTor], yerr=channel_errs[numTor], label='Experiment', color='blue')
+            except:
+                ax.plot(channelNum, bolo_exp[numTor], label='Experiment', color='blue')
             ax.plot(channelNum, synthArrayFirst[numTor], '-s', label='1st Puncture', color='gray')
             try:
                 ax.plot(channelNum, synthArraySecond[numTor], '-x', label='2nd Puncture', color='gray')
@@ -456,3 +503,93 @@ class Emis3D(object):
         plt.tight_layout()
         
         return fig
+    
+    def save_bolos_contour_plot(self, Times, Bolo_vals,\
+            Title, SaveName, SaveFolder,\
+            LowerBound=4, UpperBound=8.2, NumTicks=22):
+        
+        channel_list = np.array(range(len(Bolo_vals)))
+        x, y = np.meshgrid(Times, channel_list)
+        
+        plot_vals = copy(Bolo_vals)
+        for row in range(len(plot_vals)):
+            for indx in range(len(plot_vals[row])):
+                if plot_vals[row][indx] > 0:
+                    plot_vals[row][indx] = np.log10(plot_vals[row][indx])
+                else:
+                    plot_vals[row][indx] = np.nan
+        
+        fig,ax=plt.subplots(1,1)
+        cp = ax.contourf(x, y, plot_vals, levels = np.linspace(LowerBound, UpperBound, NumTicks), cmap="jet")
+        colorbar = fig.colorbar(cp)
+        colorbar.ax.set_ylabel("Log(Brightness [$W/m^2$])")
+        ax.set_title(Title)
+        ax.set_ylabel('Channel Number')
+        ax.set_xlabel('Time [s]')
+        savefile = join(SaveFolder, SaveName) + ".png"
+        plt.savefig(savefile, format='png')
+        
+        plt.close(fig)
+        
+    def save_synth_contour_plot(self, StartTime, EndTime, ArrayNum, PreviousArrayNum,\
+                           SaveName, SaveFolder, NumChannels=None, LowerBound=1e4):
+        
+        numTimes = len(self.radPowerTimes)
+        if NumChannels==None:
+            numChannels=0
+            for subCameraNum in range(len(self.minRadDistList[0].boloCameras_powers[ArrayNum])):
+                numChannels += len(self.minRadDistList[0].boloCameras_powers[ArrayNum][subCameraNum])
+        else:
+            numChannels=NumChannels
+        
+        etendues = self.bolo_etendues[ArrayNum]
+        bolos = np.zeros([numTimes, numChannels])
+        for timeIndx in range(numTimes):
+            plotFitsFirsts = self.minFitsFirsts[timeIndx]
+            plotFitsSeconds = self.minFitsSeconds[timeIndx]
+            preScale = self.minPreScaleList[timeIndx]
+            minRadDist = copy(self.minRadDistList[timeIndx])
+            for channelIndx in range(numChannels):
+                boloValue=0.0
+                for subCameraNum in range(len(minRadDist.boloCameras_powers[ArrayNum])):
+                    boloValue = minRadDist.boloCameras_powers[ArrayNum][subCameraNum][channelIndx]\
+                        * preScale * plotFitsFirsts[ArrayNum]
+                    if hasattr(minRadDist.boloCameras_powers_2nd[ArrayNum][subCameraNum], "len")\
+                        and len(plotFitsSeconds) >= ArrayNum:
+                        boloValue += minRadDist.boloCameras_powers_2nd[ArrayNum][subCameraNum][channelIndx]\
+                            * preScale * plotFitsFirsts[PreviousArrayNum] * plotFitsSeconds[ArrayNum]
+                boloValue = boloValue * 4.0 * math.pi / etendues[channelIndx]
+                bolos[timeIndx][channelIndx] = boloValue
+        
+        # sets lower bound to plot values
+        for i in range(numTimes):
+            for j in range(numChannels):
+                if bolos[i][j] < LowerBound:
+                    bolos[i][j] = LowerBound
+                
+        bolos = bolos.T
+        
+        self.save_bolos_contour_plot(Times = self.radPowerTimes, Bolo_vals = bolos,\
+            Title = "Array " + str(ArrayNum) + " Best Fit Brightnesses\nDischarge " + str(self.shotnumber),\
+            SaveName = SaveName,\
+            SaveFolder = SaveFolder)
+        
+    def save_exp_contour_plot(self, StartTime, EndTime, ArrayNum, Title,\
+                              SaveName, SaveFolder, EndChannel=None, DeleteChannels=None):
+        
+        if EndChannel != None:
+            expData = self.load_bolo_exp_timerange(StartTime=StartTime, EndTime=EndTime,\
+                AsBrightnesses=True)[ArrayNum][:EndChannel]
+        else:
+            expData = self.load_bolo_exp_timerange(StartTime=StartTime, EndTime=EndTime,\
+            AsBrightnesses=True)[ArrayNum]
+            
+        expTimebase = self.load_bolo_timebase_range(StartTime=StartTime, EndTime=EndTime)[ArrayNum]
+        
+        if DeleteChannels != None:
+            for indx in range(len(DeleteChannels)):
+                channel = DeleteChannels[indx]
+                expData[channel] = np.array([np.nan] * len(expData[channel]))
+        
+        self.save_bolos_contour_plot(Times = expTimebase, Bolo_vals = expData,\
+            Title = Title, SaveName = SaveName, SaveFolder = SaveFolder)

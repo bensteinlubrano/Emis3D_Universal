@@ -9,6 +9,7 @@ Created on Tue Apr 11 18:17:46 2023
 import tkinter as tk
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
 import numpy as np
 
 class Emis3D_GUI(object):
@@ -336,6 +337,7 @@ class Emis3D_GUI(object):
         except: 
             pass    
         self.type1PowersCanvas = FigureCanvasTkAgg(fig, master = Container)
+        plt.close(fig)
         self.type1PowersCanvas.draw()
         self.type1PowersCanvas.get_tk_widget().grid(row=Row, column=Column)
         
@@ -349,6 +351,7 @@ class Emis3D_GUI(object):
         except: 
             pass    
         self.type2PowersCanvas = FigureCanvasTkAgg(fig, master = Container)
+        plt.close(fig)
         self.type2PowersCanvas.draw()
         self.type2PowersCanvas.get_tk_widget().grid(row=Row, column=Column)
         
@@ -362,6 +365,7 @@ class Emis3D_GUI(object):
         except: 
             pass    
         self.type1FitsCanvas = FigureCanvasTkAgg(fig, master = Container)
+        plt.close(fig)
         self.type1FitsCanvas.draw()
         self.type1FitsCanvas.get_tk_widget().grid(row=Row, column=Column)
         
@@ -375,6 +379,7 @@ class Emis3D_GUI(object):
         except: 
             pass    
         self.type2FitsCanvas = FigureCanvasTkAgg(fig, master = Container)
+        plt.close(fig)
         self.type2FitsCanvas.draw()
         self.type2FitsCanvas.get_tk_widget().grid(row=Row, column=Column)
         
@@ -387,6 +392,7 @@ class Emis3D_GUI(object):
         except: 
             pass    
         self.kb5ChannelsCanvas = FigureCanvasTkAgg(fig, master=Container)
+        plt.close(fig)
         self.kb5ChannelsCanvas.draw()
         self.kb5ChannelsCanvas.get_tk_widget().grid(row=Row, column=Column)
         
@@ -456,6 +462,7 @@ class Emis3D_GUI(object):
         except: 
             pass    
         self.kb1Canvas = FigureCanvasTkAgg(fig, master = Container)
+        plt.close(fig)
         self.kb1Canvas.draw()
         self.kb1Canvas.get_tk_widget().grid(row=1, column=2)
         
@@ -467,5 +474,6 @@ class Emis3D_GUI(object):
         except: 
             pass
         self.plotOverviewCanvas = FigureCanvasTkAgg(fig, master = Container)
+        plt.close(fig)
         self.plotOverviewCanvas.draw()
         self.plotOverviewCanvas.get_tk_widget().grid(row=1, column=1)
