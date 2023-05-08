@@ -478,12 +478,17 @@ class Emis3D(object):
                     pass
             
             else:
+                # for watts
+                multiplier = 1.0
+                ax.set_ylabel(r"Power Location " + str(numTor) + " $(W)$")
                 # for milliwatts
-                ax.set_ylabel(r"Power Location " + str(numTor) + " $(mW)$")
-                bolo_exp[numTor] = [x * 1e3 for x in bolo_exp[numTor]]
-                channel_errs[numTor] = [x * 1e3 for x in channel_errs[numTor]]    
-                synthArrayFirst[numTor] = [x * 1e3 for x in synthArrayFirst[numTor]]    
-                synthArraySecond[numTor] = [x * 1e3 for x in synthArraySecond[numTor]] 
+                #multiplier =1e3
+                #ax.set_ylabel(r"Power Location " + str(numTor) + " $(mW)$")
+                
+                bolo_exp[numTor] = [x * multiplier for x in bolo_exp[numTor]]
+                channel_errs[numTor] = [x * multiplier for x in channel_errs[numTor]]    
+                synthArrayFirst[numTor] = [x * multiplier for x in synthArrayFirst[numTor]]    
+                synthArraySecond[numTor] = [x * multiplier for x in synthArraySecond[numTor]] 
             
             channelNum = range(len(bolo_exp[numTor]))
             try:
@@ -531,14 +536,18 @@ class Emis3D(object):
         
         plt.close(fig)
         
-    def save_synth_contour_plot(self, ArrayNum, PreviousArrayNum,\
-                           SaveName, SaveFolder, NumChannels=None, LowerBound=1e4):
+    def save_synth_contour_plot(self, ArrayNum, SaveName, SaveFolder,\
+                                PreviousArrayNum=None, NumChannels=None, LowerBound=1e4):
         
         numTimes = len(self.radPowerTimes)
         if NumChannels==None:
             numChannels=0
-            for subCameraNum in range(len(self.minRadDistList[0].boloCameras_powers[ArrayNum])):
-                numChannels += len(self.minRadDistList[0].boloCameras_powers[ArrayNum][subCameraNum])
+            bolo_powers_1st = self.rearrange_powers_array(self.minRadDistList[0].boloCameras_powers)
+            if hasattr(bolo_powers_1st[ArrayNum][0], "len"):
+                for subCameraNum in range(len(bolo_powers_1st[ArrayNum])):
+                    numChannels += len(bolo_powers_1st[ArrayNum][subCameraNum])
+            else:
+                numChannels += len(bolo_powers_1st[ArrayNum])
         else:
             numChannels=NumChannels
         
@@ -551,12 +560,22 @@ class Emis3D(object):
             minRadDist = copy(self.minRadDistList[timeIndx])
             for channelIndx in range(numChannels):
                 boloValue=0.0
-                for subCameraNum in range(len(minRadDist.boloCameras_powers[ArrayNum])):
-                    boloValue = minRadDist.boloCameras_powers[ArrayNum][subCameraNum][channelIndx]\
+                bolo_powers = self.rearrange_powers_array(self.minRadDistList[timeIndx].boloCameras_powers)
+                bolo_powers_2nd = self.rearrange_powers_array(self.minRadDistList[timeIndx].boloCameras_powers_2nd)
+                if hasattr(bolo_powers[ArrayNum][0], "len"):
+                    for subCameraNum in range(len(bolo_powers[ArrayNum])):
+                        boloValue = bolo_powers[ArrayNum][subCameraNum][channelIndx]\
+                            * preScale * plotFitsFirsts[ArrayNum]
+                        if hasattr(bolo_powers_2nd[ArrayNum][subCameraNum], "len")\
+                            and PreviousArrayNum != None:
+                            boloValue += bolo_powers_2nd[ArrayNum][subCameraNum][channelIndx]\
+                                * preScale * plotFitsFirsts[PreviousArrayNum] * plotFitsSeconds[ArrayNum]
+                else:
+                    boloValue = bolo_powers[ArrayNum][channelIndx]\
                         * preScale * plotFitsFirsts[ArrayNum]
-                    if hasattr(minRadDist.boloCameras_powers_2nd[ArrayNum][subCameraNum], "len")\
-                        and len(plotFitsSeconds) >= ArrayNum:
-                        boloValue += minRadDist.boloCameras_powers_2nd[ArrayNum][subCameraNum][channelIndx]\
+                    if hasattr(minRadDist.boloCameras_powers_2nd[ArrayNum], "len")\
+                        and PreviousArrayNum != None:
+                        boloValue += bolo_powers_2nd[ArrayNum][channelIndx]\
                             * preScale * plotFitsFirsts[PreviousArrayNum] * plotFitsSeconds[ArrayNum]
                 boloValue = boloValue * 4.0 * math.pi / etendues[channelIndx]
                 bolos[timeIndx][channelIndx] = boloValue
@@ -599,4 +618,37 @@ class Emis3D(object):
                 expData[channel] = np.array([np.nan] * len(expData[channel]))
         
         self.save_bolos_contour_plot(Times = expTimebase, Bolo_vals = expData,\
+            Title = Title, SaveName = SaveName, SaveFolder = SaveFolder)
+        
+    def save_sim_contour_plot(self, ArrayNum, Title, SaveName, SaveFolder,\
+        EndChannel=None, DeleteChannels=None):
+        
+        simData = copy(self.bolo_sim)
+        
+        for timeIndx in range(len(simData)):
+            simData[timeIndx] = self.rearrange_powers_array(Powers=simData[timeIndx])
+        
+        if EndChannel != None:
+            for timeIndx in range(len(simData)):
+                simData[timeIndx] = simData[timeIndx][ArrayNum][:EndChannel]
+        else:
+            for timeIndx in range(len(simData)):
+                simData[timeIndx] = simData[timeIndx][ArrayNum]
+        
+        for timeIndx in range(len(simData)):
+            for channelIndx in range(len(simData[timeIndx])):
+                boloValue = simData[timeIndx][channelIndx]
+                boloValue = boloValue * 4.0 * math.pi / self.bolo_etendues[ArrayNum][channelIndx]
+                simData[timeIndx][channelIndx] = boloValue
+        
+        simData = np.array(simData).T
+        
+        simTimebase = self.radPowerTimes
+        
+        if DeleteChannels != None:
+            for indx in range(len(DeleteChannels)):
+                channel = DeleteChannels[indx]
+                simData[channel] = np.array([np.nan] * len(simData[channel]))
+        
+        self.save_bolos_contour_plot(Times = simTimebase, Bolo_vals = simData,\
             Title = Title, SaveName = SaveName, SaveFolder = SaveFolder)
