@@ -90,6 +90,15 @@ class Emis3D(object):
             synth_powers_p1 = self.rearrange_powers_array(copy(radDist.boloCameras_powers))
             synth_powers_p2 = self.rearrange_powers_array(copy(radDist.boloCameras_powers_2nd))
             
+            # removes any negative numbers from experimental data for prescaling.
+            # negative channels should really be removed in fitting also; on JET, channel 16
+            # removed in fitting function
+            bolo_exp_for_sum = copy(bolo_exp)
+            for indx1 in range(len(bolo_exp_for_sum)):
+                for indx2 in range(len(bolo_exp_for_sum[indx1])):
+                    if bolo_exp_for_sum[indx1][indx2] < 0:
+                        bolo_exp_for_sum[indx1][indx2] = 0
+            
             # uniformly pre-scales synthetic powers to same order of magnitude as experimental
             # data, to put in range of fitting algorithm
             preScaleFactorNum = np.sum([np.sum(bolo_exp[indx]) for indx in range(len(bolo_exp))])
