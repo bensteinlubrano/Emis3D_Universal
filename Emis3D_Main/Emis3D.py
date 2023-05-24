@@ -85,7 +85,7 @@ class Emis3D(object):
         for i in range(self.numTorLocs):
             expMax = np.max(bolo_exp[i])
             channel_errs.append(np.array([0.1 * expMax] * len(bolo_exp[i])))
-
+            
         for radDist in RadDistVec:
             synth_powers_p1 = self.rearrange_powers_array(copy(radDist.boloCameras_powers))
             synth_powers_p2 = self.rearrange_powers_array(copy(radDist.boloCameras_powers_2nd))
@@ -322,6 +322,48 @@ class Emis3D(object):
         self.totWrad = self.accumWrads[-1]
         self.upperTotWrad = self.upperAccumWrads[-1]
         self.lowerTotWrad = self.lowerAccumWrads[-1]
+    
+    # Output data from Emis3D as an excel file
+    def output_to_excel(self):
+        
+        import pandas as pd
+        
+        # choose which variables to output to file, and what names they get in excel file
+        vars_to_print = ["radPowerTimes", "minchisqList", "lowerBoundRadPowers", "radPowers",\
+                         "upperBoundRadPowers", "lowerBoundTpfs", "tpfs", "upperBoundTpfs"]
+        excel_names = ["Time (s)", "Best Chisq", "Prad Lower (GW)", "Prad Best (GW)",\
+                       "Prad Upper (GW)", "TPF Lower", "TPF Best", "TPF Upper"]
+        
+        # copy all attributes of Emis3D instance as dictionary
+        varsDict = copy(vars(self))
+                
+        # make new dictionary with only desired variables, renamed and ordered as excel_names
+        outputDict = {}
+        for name in excel_names:
+            values = varsDict[vars_to_print[excel_names.index(name)]]
+            # also convert radiated powers from W to GW
+            if name in ["Prad Lower (GW)", "Prad Best (GW)", "Prad Upper (GW)"]:
+                values = [x * 1e-9 for x in values]
+            outputDict[name] = values
+        
+        # convert to pandas dataframe
+        outputDf = pd.DataFrame.from_dict(outputDict)
+        
+        # output as excel
+        writer = pd.ExcelWriter(join(self.data_output_directory, str(self.shotnumber) + ".xlsx"))
+        outputDf.to_excel(writer, sheet_name=str(self.shotnumber), startcol=0)
+            
+        # add any additional tokamak-specific variables to dictionary
+        try:
+            outputExtrasDict = self.tok_specific_output_data()
+            outputExtrasDf = pd.DataFrame.from_dict(outputExtrasDict)
+            outputExtrasDf.to_excel(writer, sheet_name=str(self.shotnumber),\
+                                        startcol=len(excel_names) + 2)
+        except:
+            pass
+        
+        # close excel writer
+        writer.close()
     
     def plot_radDist_array(self, PlotData, Levels,\
                                   Lengthx, Lengthy, Etime, ColorBarLabel, PlotDistType):

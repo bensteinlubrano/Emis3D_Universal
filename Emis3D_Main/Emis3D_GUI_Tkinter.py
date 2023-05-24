@@ -423,6 +423,8 @@ class Emis3D_GUI(object):
         elif self.comparingTo == "Simulation":
             self.emis.calc_tot_rad_from_sim(ErrorPool=True, PvalCutoff=pvalCutoff, MovePeak=movePeak)
         
+        self.emis.output_to_excel()
+        
         self.totRadPowerLabel.pack_forget()
         self.totRadPowerLabel = ttk.Label(ResultsContainer, text="Total Radiated Energy = " +\
                                          str(np.around(self.emis.totWrad/1e6, decimals=2)) + " [MJ]")
