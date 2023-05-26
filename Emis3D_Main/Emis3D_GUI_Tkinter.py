@@ -31,7 +31,10 @@ class Emis3D_GUI(object):
         tabControl.add(oneTimestepTab, text='One Timestep Plots')
         
         RadPowerTab = ttk.Frame(tabControl)
-        tabControl.add(RadPowerTab, text='Rad Power Overview')
+        tabControl.add(RadPowerTab, text='One Shot Overview')
+        
+        multiShotTab = ttk.Frame(tabControl)
+        tabControl.add(multiShotTab, text='Run Multiple Shots')
         
         BuildDistsTab = ttk.Frame(tabControl)
         tabControl.add(BuildDistsTab, text="Build RadDists")
@@ -40,6 +43,7 @@ class Emis3D_GUI(object):
         
         self.one_timestep(Tab = oneTimestepTab)
         self.rad_power_overview(Tab = RadPowerTab)
+        self.run_multiple_shots(Tab = multiShotTab)
         self.build_radDists(Tab = BuildDistsTab)
         
         self.window.mainloop()
@@ -288,6 +292,74 @@ class Emis3D_GUI(object):
         
         self.upperBoundLabel = ttk.Label(resultsFrame, text="Upper Bound =")
         self.upperBoundLabel.grid(row=2, column=0, padx=50, pady=5)
+        
+    def run_multiple_shots(self, Tab):
+        
+        controlFrame = ttk.Frame(Tab)
+        controlFrame2 = ttk.Frame(Tab)
+        
+        controlFrame.grid(column=0, row=0, sticky="NW")
+        controlFrame2.grid(column=0, row=1, sticky="NW")
+        
+        rowlist = [0,1,2,3,4,5,6,7,8]
+        self.multiShotList = []
+        self.multiShotStartTimes = []
+        self.multiShotEndTimes = []
+        self.multiShotNumTimes = []
+        if self.comparingTo == "Experiment":
+            for row in rowlist:
+                shotnumber_prompt = ttk.Label(controlFrame, text="Enter Shot Number")
+                shotnumber_prompt.grid(column=0, row=2*row, padx=30, pady=10)
+                
+                shotnumberEntry = ttk.Entry(controlFrame)
+                shotnumberEntry.grid(column=0, row=2*row+1, padx=30, pady=10)
+                shotnumberEntry.insert(tk.END, '-1')
+                self.multiShotList.append(shotnumberEntry)
+            
+                start_time_prompt = ttk.Label(controlFrame, text="Enter Start Time")
+                start_time_prompt.grid(row=2*row, column=1, padx=30, pady=10)
+                
+                startTimeEntry = ttk.Entry(controlFrame)
+                startTimeEntry.grid(row=2*row+1, column=1, padx=30, pady=10)
+                self.multiShotStartTimes.append(startTimeEntry)
+                
+                end_time_prompt = ttk.Label(controlFrame, text="Enter End Time")
+                end_time_prompt.grid(row=2*row, column=2, padx=30, pady=10)
+                
+                endTimeEntry = ttk.Entry(controlFrame)
+                endTimeEntry.grid(row=2*row+1, column=2, padx=30, pady=10)
+                self.multiShotEndTimes.append(endTimeEntry)
+            
+                num_times_prompt = ttk.Label(controlFrame, text="Enter Number of Timesteps")
+                num_times_prompt.grid(row=2*row, column=3, padx=30, pady=10)
+                
+                numTimesEntry = ttk.Entry(controlFrame)
+                numTimesEntry.grid(row=2*row+1, column=3, padx=30, pady=10)
+                self.multiShotNumTimes.append(numTimesEntry)
+        else:
+            warning_prompt = ttk.Label(controlFrame, text="This tab not yet set up\
+                                       for fitting to simulation data")
+            warning_prompt.grid(column=0, row=0, padx=30, pady=10)
+        
+        buttonTimestepRange = ttk.Button(master=controlFrame2, text='Enter',\
+            command=lambda:self.multishot_tot_rad_power())
+        buttonTimestepRange.grid(row=1, column=4, ipadx=10, ipady=3)
+        
+    def multishot_tot_rad_power(self):
+        pvalCutoff = 0.9545 # just always 2 std. err for now
+        
+        if self.comparingTo == "Experiment":
+            for shotIndx in range(len(self.multiShotList)):
+                shotnum = int(self.multiShotList[shotIndx].get())
+                if shotnum > 0:
+                    self.emis = self.init_emis3D_experimental(Shotnumber=shotnum)
+                    startTime = float(self.multiShotStartTimes[shotIndx].get())
+                    endTime = float(self.multiShotEndTimes[shotIndx].get())
+                    numTimes = int(self.multiShotNumTimes[shotIndx].get())
+                    self.emis.calc_tot_rad_from_exp(\
+                            StartTime = startTime, EndTime=endTime, NumTimes=numTimes,\
+                            ErrorPool=True, PvalCutoff=pvalCutoff, MovePeak=False)
+                    self.emis.output_to_excel()
         
     def init_emis3D_oneTimestep(self):
         

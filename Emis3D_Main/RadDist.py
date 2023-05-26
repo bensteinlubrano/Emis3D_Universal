@@ -6,10 +6,11 @@ Created on Fri Jun 11 13:12:06 2021
 """
 import numpy as np
 import math
+import matplotlib.pyplot as plt
 import random
 import time
 import sys
-from os.path import dirname, realpath, join
+from os.path import join
 import json
 from Util import XY_To_RPhi, RPhi_To_XY
 
@@ -23,7 +24,7 @@ from cherab.tools.emitters import RadiationFunction
 class RadDist(object):
     
     def __init__(self, NumBins = 18, NumPuncs = 2, Tokamak = None,\
-                 Mode = " Analysis", LoadFileName = None, SaveFileFolder=None):
+                 Mode = "Analysis", LoadFileName = None, SaveFileFolder=None):
         #[creates radiation distribution from a given evaluate function]
         
         if LoadFileName == None:
@@ -74,6 +75,9 @@ class RadDist(object):
     
     def evaluate_second_punc(self, X,Y,Z):
             return self.evaluate(X,Y,Z, EvalFirstPunc=0, EvalSecondPunc=1)
+        
+    def evaluate_both_punc(self, X,Y,Z):
+        return self.evaluate_first_punc(X,Y,Z) + self.evaluate_second_punc(X,Y,Z)
         
     # Various tokamaks use different toroidal angle conventions than Cherab. Emis3D uses the Cherab
     # Angle convention. self.tokamak.torConventionPhi accounts for this difference
@@ -344,6 +348,98 @@ class RadDist(object):
                     observeVal = 0.0
                 array_powers.append(observeVal)
             self.boloCameras_powers_2nd.append(array_powers)
+            
+    
+    def plot_in_round(self, Title = "Radiation Distribution",\
+                 FromWhite = False, Resolution = 60, Alpha = 0.05):
+        # Makes a 3d plot of the RadDist. Does not include any toroidal distribution overlay.
+        # Radiation magnitude is described by color. Very low value points are removed entirely,
+        # giving the general radiation structure shape. Nevertheless, the internal radiation
+        # structure is obscured by the external; such is 3d plotting. Adjust resolution and alpha for
+        # better viewing.
+        
+        # The sundial shaped thing shows the bins into which radiated power is separated.
+        
+        if self.tokamak.mode != "Build":
+            print("The tokamak object of this RadDist is not in Build mode. To use this function,\
+                  Either pass Tokamak = [a tokamak object with mode == 'Build'], or pass\
+                  Tokamak = None and Mode = 'Build' to this RadDist")
+            sys.exit(1)
+            
+        # just so the intervals are nice whole-ish numbers if Resolution is even
+        resolution = Resolution + 1
+        
+        # setup for tokamak sundial thing (shows inner first wall radius,
+        # outer first wall radius, and bin dividers)
+        theta = np.linspace(0, 2 * np.pi, resolution)
+        
+        majorRadius = self.tokamak.majorRadius
+        minorRadius = self.tokamak.minorRadius
+        outerX = (majorRadius + minorRadius) * np.cos(theta)
+        outerY = (majorRadius + minorRadius) * np.sin(theta)
+        Z = np.zeros(Resolution + 1)
+        
+        innerX = (majorRadius - minorRadius) * np.cos(theta)
+        innerY = (majorRadius - minorRadius) * np.sin(theta)
+        
+        # each column of these resulting arrays is for one line
+        binBorderThetas = np.reshape(np.linspace(0, 2 * np.pi, self.numBins+1), (1,-1))
+        borderNums = np.reshape(np.linspace(majorRadius - minorRadius,\
+                               majorRadius + minorRadius,\
+                                   resolution), (-1, 1))
+        borderXs = borderNums @ np.cos(binBorderThetas)
+        borderYs = borderNums @ np.sin(binBorderThetas)
+        
+        # setup points for evaluate function bubble plot
+        # xVec actually used for all 3 dimensions
+        xVec = np.linspace(-(majorRadius + minorRadius),\
+                    majorRadius + minorRadius, resolution)
+        evalXs, evalYs, evalZs = np.meshgrid(xVec, xVec, xVec)
+        functionVals = np.zeros((resolution, resolution, resolution))
+        for xValIndx in range(resolution):
+            for yValIndx in range(resolution):
+                for zValIndx in range(resolution):
+                    functionVals[xValIndx, yValIndx, zValIndx] =\
+                        self.evaluate_both_punc(xVec[xValIndx], xVec[yValIndx], xVec[zValIndx])
+        functionVals = np.floor(255 * functionVals / np.max(functionVals)).astype(int)
+        
+        evalXs = np.ravel(evalXs)
+        evalYs = np.ravel(evalYs)
+        evalZs = np.ravel(evalZs)
+        functionVals = np.ravel(functionVals)
+        negligible = np.argwhere(functionVals < (0.01 * np.max(functionVals)))
+        evalXs = np.delete(evalXs, negligible)
+        evalYs = np.delete(evalYs, negligible)
+        evalZs = np.delete(evalZs, negligible)
+        functionVals = np.delete(functionVals, negligible)
+        
+        fig = plt.figure()
+        ax = plt.axes(projection = '3d')
+        plotlimit = majorRadius + minorRadius
+        ax.set_xlim3d(-plotlimit, plotlimit)
+        ax.set_ylim3d(-plotlimit, plotlimit)
+        ax.set_zlim3d(-plotlimit, plotlimit)
+        # inboard midplane ring
+        ax.plot(innerX, innerY, Z, color = '#00ceaa')
+        # outboard midplane ring
+        ax.plot(outerX, outerY, Z, color = '#00ceaa')
+        # bin border lines
+        for borderNum in range(self.numBins):
+            ax.plot(borderXs[:,borderNum], borderYs[:,borderNum], Z, color = '#00ceaa')
+        # evaluate function scatter plot.
+        if FromWhite == True:
+            ax.scatter(evalXs, evalYs, evalZs, c = plt.cm.Purples(functionVals),
+                            alpha = Alpha)
+        else:
+            ax.scatter(evalXs, evalYs, evalZs, c = plt.cm.plasma(functionVals),
+                            alpha = Alpha)
+                    
+        ax.set_title(Title)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        
+        return fig
 
 class Toroidal(RadDist):
     # this class has a gaussian distribution about a flat toroidal ring
