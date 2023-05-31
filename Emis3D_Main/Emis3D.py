@@ -703,3 +703,43 @@ class Emis3D(object):
         
         self.save_bolos_contour_plot(Times = simTimebase, Bolo_vals = simData,\
             Title = Title, SaveName = SaveName, SaveFolder = SaveFolder)
+        
+    def make_crossSec_movie(self, Phi=0.0):
+        
+        self.load_tokamak(Mode="Build")
+        numFillZeros = len(str(len(self.minRadDistList)))
+        for radDistNum in range(len(self.minRadDistList)):
+            savefile = join(self.videos_output_directory, "crossSecImg") +\
+                        str(radDistNum).zfill(numFillZeros) + ".png"
+            radDist = copy(self.minRadDistList[radDistNum])
+            radDist.set_tokamak(self.tokamakBMode)
+            radDist.make_build_mode()
+            
+            crossSecPlot = radDist.plot_crossSec(Phi=Phi)
+
+            crossSecPlot.savefig(savefile, format='png')
+            plt.close(crossSecPlot)
+        
+        """
+        import cv2
+
+        video_name = 'Animations/crossSecs.avi'
+
+        images = [img for img in listdir(image_folder) if img.endswith(".png") and img.startswith('crossSecImg')]
+        images.sort()
+        frame = cv2.imread(join(image_folder, images[0]))
+        height, width, layers = frame.shape
+
+        video = cv2.VideoWriter(video_name, 0, 1, (width,height))
+
+        for image in images:
+            video.write(cv2.imread(join(image_folder, image)))
+            
+        for radDistNum in range(len(self.minRadDistList)):
+            savefile = join(image_folder, "crossSecImg") +\
+                        str(radDistNum).zfill(numFillZeros) + ".png"
+            remove(savefile)
+
+        video.release()
+        """
+        #return video

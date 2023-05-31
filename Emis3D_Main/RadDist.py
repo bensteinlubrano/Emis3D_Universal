@@ -44,7 +44,12 @@ class RadDist(object):
             
         self.tokamak = Tokamak
         self.saveFileFolder=SaveFileFolder
+        
+        if Mode == "Build":
+            self.make_build_mode()
 
+    def set_tokamak(self, Tokamak):
+        self.tokamak = Tokamak
     
     def prepare_for_JSON(self, properties):
         
@@ -372,7 +377,6 @@ class RadDist(object):
         # setup for tokamak sundial thing (shows inner first wall radius,
         # outer first wall radius, and bin dividers)
         theta = np.linspace(0, 2 * np.pi, resolution)
-        
         majorRadius = self.tokamak.majorRadius
         minorRadius = self.tokamak.minorRadius
         outerX = (majorRadius + minorRadius) * np.cos(theta)
@@ -440,6 +444,170 @@ class RadDist(object):
         ax.set_zlabel("Z")
         
         return fig
+    
+    def plot_unwrapped(self, SpotSize = 20, FromWhite = False, Resolution = 20, Alpha = 0.005):
+        
+        # Makes a 3d plot of the RadDist, unwrapped. Does not include any toroidal distribution overlay.
+        # Radiation magnitude is described by color. Very low value points are removed entirely,
+        # giving the general radiation structure shape. Nevertheless, the internal radiation
+        # structure is obscured by the external; such is 3d plotting. Adjust resolution and alpha for
+        # better viewing.
+        
+        if self.tokamak.mode != "Build":
+            print("The tokamak object of this RadDist is not in Build mode. To use this function,\
+                  Either pass Tokamak = [a tokamak object with mode == 'Build'], or pass\
+                  Tokamak = None and Mode = 'Build' to this RadDist")
+            sys.exit(1)
+        
+        majorRadius = self.tokamak.majorRadius
+        minorRadius = self.tokamak.minorRadius
+        
+        xRes = math.ceil(Resolution*(2.0*minorRadius))
+        yRes = math.ceil(Resolution*(2.0*math.pi))
+        zRes = math.ceil(Resolution*(4.4*minorRadius))
+        
+        evalRs = np.linspace(majorRadius - minorRadius, majorRadius + minorRadius, xRes)
+        evalPhis = np.linspace(-np.pi, np.pi, yRes)
+        evalZs = np.linspace(-2.2*minorRadius, 2.2*minorRadius, zRes)
+                        
+        functionVals = []
+        plotRs = []
+        plotPhis = []
+        plotZs= []
+        
+        for evalR in evalRs:
+            for evalZ in evalZs:
+                if self.tokamak.wallcurve.contains_points([(evalR, evalZ)]):
+                    for evalPhi in evalPhis:
+                            evalX, evalY = RPhi_To_XY(evalR, evalPhi)
+                            
+                            functionVal = self.evaluate_both_punc(evalX, evalY, evalZ)
+                                
+                            plotRs.append(evalR)
+                            plotPhis.append(evalPhi)
+                            plotZs.append(evalZ)
+                            functionVals.append(functionVal)
+        
+        # convert to RGB scale
+        functionMax = np.max(functionVals)
+        functionVals = [math.floor(255 * x / functionMax) for x in functionVals]
+        
+        # Delete points where radiated power is less than 1% of maximum
+        negligible = np.argwhere(functionVals < (0.01 * functionMax))
+        functionVals = np.delete(functionVals, negligible) 
+        plotRs = np.delete(plotRs, negligible)
+        plotPhis = np.delete(plotPhis, negligible)
+        plotZs = np.delete(plotZs, negligible)
+        
+        fig = plt.figure()
+        ax = plt.axes(projection = '3d')
+        ax.set_xlim3d(majorRadius - minorRadius, majorRadius + minorRadius)
+        
+        if self.tokamak.tokamakName=="JET":
+            ax.set_zlim3d(-1.5 * minorRadius, 2.0 * minorRadius)
+            phiLeft = self.tokamak.injectionPhiTor
+            phiRight = self.tokamak.injectionPhiTor + (2.0 * np.pi)
+                    
+        elif self.tokamak.tokamakName=="SPARC":
+            ax.set_zlim3d(-2.2 * minorRadius, 2.2 * minorRadius)
+            phiLeft = self.tokamak.injectionPhiTor - (2.0 * np.pi)
+            phiRight = self.tokamak.injectionPhiTor
+            
+        ax.set_ylim3d(phiLeft, phiRight)
+        ax.view_init(elev=20.0, azim=200)
+        #ax.view_init(elev=20.0, azim=0)
+        
+        #Moves center of plot from phi = 0 to injector location
+        for distNum in range(len(plotPhis)):
+            if plotPhis[distNum] < phiLeft:
+                plotPhis[distNum] = plotPhis[distNum] + (2.0 * np.pi)
+            elif plotPhis[distNum] > phiRight:
+                plotPhis[distNum] = plotPhis[distNum] - (2.0 * np.pi)
+           
+        # evaluate function scatter plot.
+        if FromWhite == True:
+            ax.scatter(plotRs, plotPhis, plotZs, c = plt.cm.Purples(functionVals),
+                            s=SpotSize, alpha = Alpha)
+        else:
+            ax.scatter(plotRs, plotPhis, plotZs, c = plt.cm.plasma(functionVals),
+                            s=SpotSize, alpha = Alpha)
+        
+        # For plotting last closed flux surface
+        """
+        r, z = self.tokamakAMode.get_qsurface_contour(Qval="Separatrix")
+        phiEdgeLeft = [phiLeft] * len(r)
+        phiEdgeRight = [phiRight] * len(r)
+        ax.plot3D(r,phiEdgeLeft,z, 'orange')
+        ax.plot3D(r,phiEdgeRight,z, 'orange')
+        """
+        
+        # For plotting first wall contour
+        r = self.tokamak.wallcurve.vertices[:,0]
+        z = self.tokamak.wallcurve.vertices[:,1]
+        phiEdgeLeft = [phiLeft] * len(r)
+        phiEdgeRight = [phiRight] * len(r)
+        ax.plot3D(r,phiEdgeLeft,z, 'orange')
+        ax.plot3D(r,phiEdgeRight,z, 'orange')
+        
+        ax.set_xlabel("R")
+        ax.set_ylabel("$\Phi$")
+        ax.set_zlabel("Z")
+        ax.grid(False)
+        """
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_zticks([])
+        """
+        
+        return fig
+    
+    def plot_crossSec(self, Phi = 0.0):
+        # Makes a 2d plot of the RadDist at a given phi location. Phi is in radians.
+        # Does not include any toroidal distribution overlay.
+        
+        if self.tokamak.mode != "Build":
+            print("The tokamak object of this RadDist is not in Build mode. To use this function, "\
+                  + "Either pass Tokamak = [a tokamak object with mode == 'Build'], or pass "\
+                  + "Tokamak = None and Mode = 'Build' to this RadDist")
+            sys.exit(1)
+        
+        fig = plt.figure()
+        ax = plt.axes()
+        
+        # make 2d grids of r, z, and emissivity values (all start at 0)
+        r = np.linspace(1.5,4, num=50)
+        z = np.linspace(-2,2.5, num=90)
+        rgrid,zgrid = np.meshgrid(r,z)
+        emis = rgrid*0.
+        
+        # take a few phi phi values about the desired phi value
+        for phi in np.linspace(Phi-0.01, Phi+0.01, 4):
+            # convert to x and y
+            xgrid, ygrid, = RPhi_To_XY(rgrid, phi)          
+            
+            for i,j in np.ndindex(xgrid.shape):
+                # add emissivity at each point to its point on the emis grid
+                x = xgrid[i,j]
+                y = ygrid[i,j]
+                z1 = zgrid[i,j]
+                
+                emis[i,j] += self.evaluate_both_punc(x,y,z1)
+
+        # make 2d plot
+        ax.contourf(r,z, emis, levels=20, cmap="Blues")
+        
+        # For plotting first wall contour
+        r = self.tokamak.wallcurve.vertices[:,0]
+        z = self.tokamak.wallcurve.vertices[:,1]
+        ax.plot(r,z, 'orange')
+        
+        ax.set_title("Phi = Injector")
+        ax.set_ylabel('Z [m]')
+        ax.set_xlabel('R [m]')
+        
+        ax.set_aspect('equal')
+        
+        return fig
 
 class Toroidal(RadDist):
     # this class has a gaussian distribution about a flat toroidal ring
@@ -466,6 +634,10 @@ class Toroidal(RadDist):
             self.polSigma = properties["polSigma"]
         
         self.distType = "Toroidal"
+        
+    def make_build_mode(self):
+        # toroidals need no additions for build mode
+        pass
         
     def evaluate(self, x,y,z, EvalFirstPunc, EvalSecondPunc):
         
@@ -527,11 +699,11 @@ class Helical(RadDist):
             self.time = properties["time"]
             
         self.distType = "Helical"
-        
-        if Mode == "Build":
-            self.tokamak.set_fieldline(StartR = self.startR, StartZ = self.startZ,\
-                StartPhi = self.tokamak.injectionPhiTor, FlineShotNumber = self.shotnumber)
-        
+            
+    def make_build_mode(self):
+        self.tokamak.set_fieldline(StartR = self.startR, StartZ = self.startZ,\
+            StartPhi = self.tokamak.injectionPhiTor, FlineShotNumber = self.shotnumber)
+    
     def evaluate(self, x,y,z, EvalFirstPunc, EvalSecondPunc):
         # Return the emissivity (W/m^3/rad) at the point (x,y,z) according to this
         # instantiation of Emis3D. This function works only with scalar values of x, y and z.
