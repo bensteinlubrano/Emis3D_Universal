@@ -11,9 +11,10 @@ from os.path import join, dirname, realpath
 import numpy as np
 
 from raysect.core import Point3D, Vector3D, Node, rotate_basis, translate
-from raysect.primitive import Box, Subtract
+from raysect.primitive import Box, Subtract, Sphere
 from raysect.optical import World
-from raysect.optical.material import AbsorbingSurface
+from raysect.optical.material import AbsorbingSurface, UniformSurfaceEmitter
+from raysect.optical.library.spectra.colours import red, green, blue, purple
 
 try:
     from cherab.tools.observers import BolometerCamera, BolometerSlit, BolometerFoil
@@ -60,7 +61,173 @@ class Cherab_Basic_Bolo_Camera(Bolometer_Camera):
             newBolometer = CherabBasicBolometer(BoloConfigFile = BoloConfigFiles[fileNum], World=self.world,\
                 IndicatorLights = self.indicatorLights)
             self.bolometers.append(newBolometer)
+
+class Synth_Brightness_Observer(Diagnostic):
+    # a simple synthetic foil for finding local brightness, e.g. on a first wall tile.
+    # less complicated than bolometer camera. No multiple channel options, not designed
+    # for any casing. Some parameters like size currently hardcoded
+    
+    def __init__(self, World, ApCenterPoint, FoilRotVec, IndicatorLights):
+        self.world = World
+        self.indicatorLights = IndicatorLights
+        
+        # sets 1cm^2 foil
+        self.det_xi = 1e-2 # detector width (meters)
+        self.det_zeta = 1e-2  # detector height (meters)
+        
+        # sets circular aperture with 10cm diameter. "width" is misleading here:
+        # bolometer apertures are circular in cherab, and then cut down to
+        # rectangles by introducing casing geometry. No casing used here, so
+        # aperture is just circular. Only the maximum of these two parameters
+        # matters
+        self.ap_y = 1e-1 # aperture width (meters)
+        self.ap_z = 1e-1 # aperture width (meters)
+        
+        # sets foil as one millimeter behind 'aperture'
+        self.x0 = np.array(-1e-3, 0.0, 0.0) # detector coordinate system (center) (meters)
+        self.x1 = np.array(-1e-3, 0.0, 1.0) # detector coordinate system (zeta) (meters)
+        self.x2 = np.array(-1e-3, 1.0, 0.0) # detector coordinate system (xi) (meters)
+        
+        # sets center point of aperture as ApCenterPoint
+        self.ap_ro = ApCenterPoint[0] # major radius of aperture (m)
+        self.ap_zo = ApCenterPoint[1]  # height of aperture (m)
+        self.ap_phi = ApCenterPoint[2]
+        
+        # sets vector from foil center to aperture center as FoilNormVec
+        self.ap_alpha = FoilRotVec[0] # aperture rotation angle alpha (radians)
+        self.ap_beta = FoilRotVec[0] # aperture rotation angle beta (radians)
+        self.ap_gamma = FoilRotVec[0]  # aperture rotation angle gamma (radians)
+        
+        self.build()
+        
+        if self.indicatorLights:
+            self.add_indicator_lights()
+        
+    def build(self):
+
+        # Convenient constants
+        # XAXIS = Vector3D(1, 0, 0) #unused
+        YAXIS = Vector3D(0, 1, 0)
+        ZAXIS = Vector3D(0, 0, 1)
+        ORIGIN = Point3D(0, 0, 0)
+
+        xivec = (self.x2 - self.x0)/np.linalg.norm(self.x2 - self.x0)
+        zetavec = (self.x1 - self.x0)/np.linalg.norm(self.x1 - self.x0)
+        xivec = Vector3D(xivec[0], xivec[1], xivec[2])
+        zetavec = Vector3D(zetavec[0], zetavec[1], zetavec[2])
+        
+        # Bolometer geometry
+        SLIT_WIDTH = self.ap_y
+        SLIT_HEIGHT = self.ap_z
+        FOIL_WIDTH = self.det_xi
+        FOIL_HEIGHT = self.det_zeta
+        FOIL_CORNER_CURVATURE = 0.0005
+
+        world = self.world
+
+        ########################################################################
+        # Build a bolometer camera
+        ########################################################################
+
+        # Instance of the bolometer camera
+        bolometer_camera = BolometerCamera(camera_geometry=None, parent=world)
+        
+        # The bolometer slit in this instance just contains targeting information
+        # for the ray tracing, since there is no casing geometry
+        # The slit is defined in the local coordinate system of the camera
+        slit = BolometerSlit(centre_point=ORIGIN,
+                             basis_x=YAXIS, dx=SLIT_WIDTH, basis_y=ZAXIS, dy=SLIT_HEIGHT,
+                             parent=bolometer_camera)
+
+        foil_transform = translate(self.x0[0], self.x0[1], self.x0[2])
+
+        foil = BolometerFoil(detector_id="Foil {}".format(1),
+                             centre_point=ORIGIN.transform(foil_transform),
+                             basis_x=xivec, dx=FOIL_WIDTH,
+                             basis_y=zetavec, dy=FOIL_HEIGHT,
+                             slit=slit, parent=bolometer_camera, units="Power",
+                             accumulate=False, curvature_radius=FOIL_CORNER_CURVATURE)
+        
+        bolometer_camera.add_foil_detector(foil)
+
+
+        # the last step here is to translate from alpha, beta, gamma rotations to a single Affine matrix.
+        # we know that we can get the correct viewing geometry by setting the forward direction and the up
+        # direction such that the cross-product of up x forward is in the desired direction. Recall that the
+        # rotate_basis function is defined like rotate_basis(forward, up). So, we will start with a vector in
+        # the +x direction (our forward) and in the +z direction (our up), rotate it with alpha beta and gamma,
+        # and then find the Cherab up x forward that gives the same result.
+        ourForward = np.array([1,0,0])
+        ourUp = np.array([0,0,1])
+        alphaMat = Rot.from_euler('x', self.ap_alpha)
+        alphaMat = alphaMat.as_matrix()
+        betaMat = Rot.from_euler('y', -self.ap_beta)
+        betaMat = betaMat.as_matrix()
+        gammaMat = Rot.from_euler('z', self.ap_gamma)
+        gammaMat = gammaMat.as_matrix()
+
+        # rotating the forward vector
+        ourForwardR = np.matmul(alphaMat,ourForward)
+        ourForwardR = np.matmul(betaMat,ourForwardR)
+        ourForwardR = np.matmul(gammaMat,ourForwardR)
+
+        # rotating the up vector
+        ourUpR = np.matmul(alphaMat, ourUp)
+        ourUpR = np.matmul(betaMat, ourUpR)
+        ourUpR = np.matmul(gammaMat, ourUpR)
+
+        # ourForwardR is now the direction we would like to look. that means CherabUp x CherabForward = ourForwardR.
+        # not enough constraints yet, we also need to use ourUpR. Last constraint is that ourUpR should be
+        # identically CherabForward. So we have CherabUp x ourUpR = ourForwardR.
+        cherabUp = np.cross(ourUpR, ourForwardR, axis=None)
+        ourUpR = Vector3D(ourUpR[0], ourUpR[1], ourUpR[2])
+        cherabForward = ourUpR
+        cherabUp = Vector3D(cherabUp[0], cherabUp[1], cherabUp[2])
+
+        # we've got the camera properly aligned, but we are not translating properly. we need to rotate the R Z translation
+        # to get the proper XYZ.
+        transVec = np.array([self.ap_ro, 0., 0.])
+        gammaMatTrans = Rot.from_euler('z', self.ap_phi)
+        gammaMatTrans = gammaMatTrans.as_matrix()
+        transVec = np.matmul(gammaMatTrans, transVec)
+        
+        bolometer_camera.transform = translate(transVec[0],transVec[1],self.ap_zo)\
+            *rotate_basis(cherabForward, cherabUp) 
+
+        
+        self.bolometer_camera = bolometer_camera
+        
+    def add_indicator_lights(self):        
+        # Adds lights indicating center points of foil and the normal vectors to it
+        foil = self.bolometer_camera.foil_detectors[0]
+        center_point = foil.centre_point
+        print(center_point)
+        CenterPoint = Sphere(0.002, parent=self.world,\
+            transform=translate(center_point.x, center_point.y, center_point.z))
+        CenterPoint.material = UniformSurfaceEmitter(red, 100.0)
+        
+        normal_vector = foil.normal_vector * 0.01
+        print(normal_vector)
+        print("")
+        NormalPoint = Sphere(0.002, parent=self.world,\
+            transform=translate(center_point.x+normal_vector.x, center_point.y+normal_vector.y, center_point.z+normal_vector.z))
+        NormalPoint.material = UniformSurfaceEmitter(green, 100.0)
             
+        # Adds lights indicating center points of slits
+        for i in range(len(self.bolometer_camera.slits)):
+            slit_center_point = self.bolometer_camera.slits[i].centre_point
+            print(slit_center_point)
+            SlitPoint = Sphere(0.002, parent=self.world,\
+                transform=translate(slit_center_point.x, slit_center_point.y, slit_center_point.z))
+            SlitPoint.material = UniformSurfaceEmitter(blue, 100.0)
+            
+            normal_vector = self.bolometer_camera.slits[i].normal_vector * 0.01
+            print(normal_vector)
+            print("")
+            NormalPoint = Sphere(0.002, parent=self.world,\
+                transform=translate(slit_center_point.x+normal_vector.x, slit_center_point.y+normal_vector.y, slit_center_point.z+normal_vector.z))
+            NormalPoint.material = UniformSurfaceEmitter(purple, 100.0)
+        ## end of testing loops    
 
 class Bolometer(object):
     '''
