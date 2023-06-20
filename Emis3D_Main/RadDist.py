@@ -13,6 +13,7 @@ import sys
 from os.path import join
 import json
 from Util import XY_To_RPhi, RPhi_To_XY
+from Diagnostic import Synth_Brightness_Observer
 
 # raysect dependencies
 from raysect.core.math import translate
@@ -20,6 +21,8 @@ from raysect.optical.material import VolumeTransform
 from raysect.primitive import Cylinder
 
 from cherab.tools.emitters import RadiationFunction
+
+from copy import deepcopy
 
 class RadDist(object):
     
@@ -575,8 +578,10 @@ class RadDist(object):
         ax = plt.axes()
         
         # make 2d grids of r, z, and emissivity values (all start at 0)
-        r = np.linspace(1.5,4, num=50)
-        z = np.linspace(-2,2.5, num=90)
+        r = np.linspace(self.tokamak.majorRadius-self.tokamak.minorRadius,\
+                        self.tokamak.majorRadius+self.tokamak.minorRadius, num=50)
+        z = np.linspace(-2.5*self.tokamak.minorRadius,\
+                        2.5*self.tokamak.minorRadius, num=90)
         rgrid,zgrid = np.meshgrid(r,z)
         emis = rgrid*0.
         
@@ -608,7 +613,53 @@ class RadDist(object):
         ax.set_aspect('equal')
         
         return fig
+    
+    def observe_local_intensity(self, ApCenterPoint = [2.18, 0.68, 0.0],\
+                                FoilRotVec = [0.0, -np.pi/4.0, np.pi]):
+    
+        if self.tokamak.mode != "Build":
+            print("The tokamak object of this RadDist is not in Build mode. To use this function,\
+                  Either pass Tokamak = [a tokamak object with mode == 'Build'], or pass Tokamak = None and Mode = 'Build'\
+                  to this RadDist")
+            sys.exit(11)
+            
+        tempworld = deepcopy(self.tokamak.world)
+        sensor = Synth_Brightness_Observer(World=tempworld,\
+                ApCenterPoint = ApCenterPoint,\
+                FoilRotVec = FoilRotVec,\
+                IndicatorLights=False)
+        
+        for foil in sensor.bolometer_camera.foil_detectors:
+            # the following line sets the number of rays to trace at once in parallel. Heimdall can apparently do 16.
+            foil.render_engine.processes = 16
+            # The following line sets the resolution of the sightline area viewed by each bolometer. Jack Lovell says this
+            # number is reasonable.
+            foil.pixel_samples = 1e5
+        
+        # The following ines define an emitting volume that the RadDist will evaluate functions are embedded in.
+        # The parameters are set to encompass to entirety of the tokamak (this setup is for JET and smaller), and the -2.5 is to shift the
+        # volume so that it is vertically centered at  z = 0.
+        # the first line defines the shape, the second makes it an emitting volume, the third embeds it in the world of the tokamak in question
+        emitter = Cylinder(radius=5, height=5, transform=translate(0, 0, -2.5))
+        emitter.parent = tempworld
+        
+        # Observe first punctures
+        emitter.material = VolumeTransform(RadiationFunction(\
+            self.evaluate_first_punc_cherab), emitter.transform.inverse())
+        
+        sensor_power_firstpunc = sensor.bolometer_camera.observe()
+        
+        # Observe second punctures
+        emitter.material = VolumeTransform(RadiationFunction(\
+            self.evaluate_second_punc_cherab), emitter.transform.inverse())
+        
+        sensor_power_secondpunc = sensor.bolometer_camera.observe()
+        
+        #print("Intensity Sensor Power 1st Punc = " + str(sensor_power_firstpunc) + " [W]")
+        #print("Intensity Sensor Power 2nd Punc = " + str(sensor_power_secondpunc) + " [W]")
 
+        return(sensor_power_firstpunc[0] + sensor_power_secondpunc[0])
+        
 class Toroidal(RadDist):
     # this class has a gaussian distribution about a flat toroidal ring
     def __init__(self, NumBins = 18, Tokamak = None,\

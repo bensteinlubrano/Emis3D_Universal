@@ -26,7 +26,7 @@ class Tokamak(object):
         # Emis3D uses the Cherab angle convention. This angle is subtracted in the evaluate
         # statements in RadDist to make the angles match.
         torConventionPhis = {"JET": math.pi / 2.0,
-            "SPARC": 0.0}#math.pi / 2.0}
+            "SPARC": 0.0, "DIIID":0.0}
         
         self.torConventionPhi = torConventionPhis[TokamakName]
         self.wallfile = WallFile

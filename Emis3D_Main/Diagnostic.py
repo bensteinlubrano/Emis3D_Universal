@@ -84,9 +84,9 @@ class Synth_Brightness_Observer(Diagnostic):
         self.ap_z = 1e-1 # aperture width (meters)
         
         # sets foil as one millimeter behind 'aperture'
-        self.x0 = np.array(-1e-3, 0.0, 0.0) # detector coordinate system (center) (meters)
-        self.x1 = np.array(-1e-3, 0.0, 1.0) # detector coordinate system (zeta) (meters)
-        self.x2 = np.array(-1e-3, 1.0, 0.0) # detector coordinate system (xi) (meters)
+        self.x0 = np.array([-1e-3, 0.0, 0.0]) # detector coordinate system (center) (meters)
+        self.x1 = np.array([-1e-3, 0.0, 1.0]) # detector coordinate system (zeta) (meters)
+        self.x2 = np.array([-1e-3, 1.0, 0.0]) # detector coordinate system (xi) (meters)
         
         # sets center point of aperture as ApCenterPoint
         self.ap_ro = ApCenterPoint[0] # major radius of aperture (m)
@@ -95,8 +95,8 @@ class Synth_Brightness_Observer(Diagnostic):
         
         # sets vector from foil center to aperture center as FoilNormVec
         self.ap_alpha = FoilRotVec[0] # aperture rotation angle alpha (radians)
-        self.ap_beta = FoilRotVec[0] # aperture rotation angle beta (radians)
-        self.ap_gamma = FoilRotVec[0]  # aperture rotation angle gamma (radians)
+        self.ap_beta = FoilRotVec[1] # aperture rotation angle beta (radians)
+        self.ap_gamma = FoilRotVec[2]  # aperture rotation angle gamma (radians)
         
         self.build()
         
@@ -135,8 +135,8 @@ class Synth_Brightness_Observer(Diagnostic):
         # The bolometer slit in this instance just contains targeting information
         # for the ray tracing, since there is no casing geometry
         # The slit is defined in the local coordinate system of the camera
-        slit = BolometerSlit(centre_point=ORIGIN,
-                             basis_x=YAXIS, dx=SLIT_WIDTH, basis_y=ZAXIS, dy=SLIT_HEIGHT,
+        slit = BolometerSlit(centre_point=ORIGIN, slit_id="sensor slit",\
+                             basis_x=YAXIS, dx=SLIT_WIDTH, basis_y=ZAXIS, dy=SLIT_HEIGHT,\
                              parent=bolometer_camera)
 
         foil_transform = translate(self.x0[0], self.x0[1], self.x0[2])
@@ -197,19 +197,19 @@ class Synth_Brightness_Observer(Diagnostic):
         
         self.bolometer_camera = bolometer_camera
         
-    def add_indicator_lights(self):        
+    def add_indicator_lights(self, Size=0.002, NormVecSize = 0.02):        
         # Adds lights indicating center points of foil and the normal vectors to it
         foil = self.bolometer_camera.foil_detectors[0]
         center_point = foil.centre_point
         print(center_point)
-        CenterPoint = Sphere(0.002, parent=self.world,\
+        CenterPoint = Sphere(Size, parent=self.world,\
             transform=translate(center_point.x, center_point.y, center_point.z))
         CenterPoint.material = UniformSurfaceEmitter(red, 100.0)
         
-        normal_vector = foil.normal_vector * 0.01
+        normal_vector = foil.normal_vector * NormVecSize
         print(normal_vector)
         print("")
-        NormalPoint = Sphere(0.002, parent=self.world,\
+        NormalPoint = Sphere(Size, parent=self.world,\
             transform=translate(center_point.x+normal_vector.x, center_point.y+normal_vector.y, center_point.z+normal_vector.z))
         NormalPoint.material = UniformSurfaceEmitter(green, 100.0)
             
@@ -217,14 +217,14 @@ class Synth_Brightness_Observer(Diagnostic):
         for i in range(len(self.bolometer_camera.slits)):
             slit_center_point = self.bolometer_camera.slits[i].centre_point
             print(slit_center_point)
-            SlitPoint = Sphere(0.002, parent=self.world,\
+            SlitPoint = Sphere(Size, parent=self.world,\
                 transform=translate(slit_center_point.x, slit_center_point.y, slit_center_point.z))
             SlitPoint.material = UniformSurfaceEmitter(blue, 100.0)
             
-            normal_vector = self.bolometer_camera.slits[i].normal_vector * 0.01
+            normal_vector = self.bolometer_camera.slits[i].normal_vector * NormVecSize
             print(normal_vector)
             print("")
-            NormalPoint = Sphere(0.002, parent=self.world,\
+            NormalPoint = Sphere(Size, parent=self.world,\
                 transform=translate(slit_center_point.x+normal_vector.x, slit_center_point.y+normal_vector.y, slit_center_point.z+normal_vector.z))
             NormalPoint.material = UniformSurfaceEmitter(purple, 100.0)
         ## end of testing loops    
