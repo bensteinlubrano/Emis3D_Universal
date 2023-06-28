@@ -446,6 +446,7 @@ class RadDist(object):
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
         
+        fig.show()
         return fig
     
     def plot_unwrapped(self, SpotSize = 20, FromWhite = False, Resolution = 20, Alpha = 0.005):
@@ -707,6 +708,58 @@ class Toroidal(RadDist):
         if EvalSecondPunc:
             
             return 0.0
+    
+class Sphere(RadDist):
+    # this class has a large sphere
+    def __init__(self, NumBins = 18, Tokamak = None,\
+                 Mode = "Analysis", LoadFileName = None,\
+                 StartR = 1.7, StartZ = 0.0, Radius = .5,\
+                 Phi = 120, SaveFileFolder=None):
+        super(Sphere, self).__init__(NumBins = NumBins,\
+                 NumPuncs = 1, Tokamak = Tokamak,\
+                 Mode = Mode, LoadFileName = LoadFileName,\
+                 SaveFileFolder=SaveFileFolder)
+        if LoadFileName == None:
+            if StartR == None:
+                self.startR = self.tokamak.majorRadius
+            else:
+                self.startR = StartR
+            self.startZ = StartZ
+            self.radius = Radius
+            self.phi = Phi
+        else:
+            with open(LoadFileName) as file:
+                properties = json.load(file)
+            self.startR = properties["startR"]
+            self.startZ = properties["startZ"]
+            self.radius = properties["radius"]
+            self.phi = properties["phi"]
+        
+        self.distType = "Sphere"
+        
+    def make_build_mode(self):
+        # toroidals need no additions for build mode
+        pass
+        
+    def evaluate(self, x,y,z, EvalFirstPunc, EvalSecondPunc):
+        
+        # first we need to convert from x,y,z to R,Z,phi
+        Z = z
+        R, phi0 = XY_To_RPhi(x,y)
+        
+        startX, startY = RPhi_To_XY(self.startR, self.phi)
+
+        if EvalFirstPunc:
+            #Any point outside of major radius of Tokamak has no emisivisty  
+            if((x-startX)**2 + (y-startY)**2 + (z-self.startZ)**2 < self.radius**2):
+                localEmis = 1
+            else: 
+                localEmis = 0
+            return localEmis
+            
+        if EvalSecondPunc:
+            
+            return 0.0
         
     def save_RadDist(self, RoundDec = 2):
         #[saves radiation distribution to a file]
@@ -714,7 +767,7 @@ class Toroidal(RadDist):
         properties = self.__dict__
         properties = self.prepare_for_JSON(properties)
         
-        saveFileName = join(self.saveFileFolder,"toroidal_pSig_") + str(round(self.polSigma, RoundDec)).replace('.', '_')\
+        saveFileName = join(self.saveFileFolder,"sphere_pSig_") + str(round(self.polSigma, RoundDec)).replace('.', '_')\
         + "_R_" + str(round(self.startR, RoundDec)).replace('.', '_')\
         + "_Z_" + str(round(self.startZ, RoundDec)).replace('.', '_').replace('-', 'neg')\
         + ".txt"
@@ -727,7 +780,7 @@ class Helical(RadDist):
     # this class will have specifically helical radiation distributions
     def __init__(self, NumBins = 18, Tokamak = None,\
                  Mode = "Analysis", LoadFileName = None,\
-                 StartR = 2.96, StartZ = 0.0, PolSigma = 0.15,\
+                 StartR = 1.7, StartZ = 0.0, PolSigma = 0.15,\
                  ShotNumber = None, Time=0, SaveFileFolder=None):
         super(Helical, self).__init__(NumBins = NumBins, NumPuncs = 2,\
                  Tokamak = Tokamak, Mode = Mode,\
@@ -752,7 +805,7 @@ class Helical(RadDist):
         self.distType = "Helical"
             
     def make_build_mode(self):
-        self.tokamak.set_fieldline(StartR = self.startR, StartZ = self.startZ,\
+            self.tokamak.set_fieldline(StartR = self.startR, StartZ = self.startZ,\
             StartPhi = self.tokamak.injectionPhiTor, FlineShotNumber = self.shotnumber)
     
     def evaluate(self, x,y,z, EvalFirstPunc, EvalSecondPunc):
