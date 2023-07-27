@@ -47,9 +47,6 @@ class RadDist(object):
             
         self.tokamak = Tokamak
         self.saveFileFolder=SaveFileFolder
-        
-        if Mode == "Build":
-            self.make_build_mode()
 
     def set_tokamak(self, Tokamak):
         self.tokamak = Tokamak
@@ -686,6 +683,9 @@ class Toroidal(RadDist):
         
         self.distType = "Toroidal"
         
+        if Mode == "Build":
+            self.make_build_mode()
+        
     def make_build_mode(self):
         # toroidals need no additions for build mode
         pass
@@ -722,6 +722,76 @@ class Toroidal(RadDist):
         with open(saveFileName, 'w') as save_file:
              save_file.write(json.dumps(properties))
              
+class ElongatedRing(RadDist):
+    # this class has a bivariate gaussian distribution about a circle, with different
+    # gaussian widths in r and z
+    def __init__(self, NumBins = 18, Tokamak = None,\
+                 Mode = "Analysis", LoadFileName = None,\
+                 StartR = None, StartZ = 0.0, PolSigma = 0.15,\
+                 Elongation=1.0, SaveFileFolder=None):
+        super(ElongatedRing, self).__init__(NumBins = NumBins,\
+                 NumPuncs = 1, Tokamak = Tokamak,\
+                 Mode = Mode, LoadFileName = LoadFileName,\
+                 SaveFileFolder=SaveFileFolder)
+        if LoadFileName == None:
+            if StartR == None:
+                self.startR = self.tokamak.majorRadius
+            else:
+                self.startR = StartR
+            self.startZ = StartZ
+            self.polSigma = PolSigma
+            self.elongation = Elongation
+        else:
+            with open(LoadFileName) as file:
+                properties = json.load(file)
+            self.startR = properties["startR"]
+            self.startZ = properties["startZ"]
+            self.polSigma = properties["polSigma"]
+            self.elongation = properties["elongation"]
+        
+        self.distType = "ElongatedRing"
+        
+        if Mode == "Build":
+            self.make_build_mode()
+        
+    def make_build_mode(self):
+        # toroidally symmetric radDists need no additions for build mode
+        pass
+        
+    def evaluate(self, x,y,z, EvalFirstPunc, EvalSecondPunc):
+        
+        # first we need to convert from x,y,z to R,Z,phi
+        Z = z
+        R, phi0 = XY_To_RPhi(x,y)
+        
+        if EvalFirstPunc:
+            # bivariate normal distribution in poloidal plane. 
+            # integrated over dR and dZ this function returns 1. I think.
+            localEmis = ((1.0 / (2.0 * np.pi * self.elongation * self.polSigma**2))\
+                * math.exp(-0.5 * ((R - self.startR)**2) / self.polSigma**2)\
+                * math.exp(-0.5 * ((Z - self.startZ)**2) / (self.polSigma*self.elongation)**2))
+            
+            return localEmis
+            
+        if EvalSecondPunc:
+            
+            return 0.0
+        
+    def save_RadDist(self, RoundDec = 2):
+        #[saves radiation distribution to a file]
+        
+        properties = self.__dict__
+        properties = self.prepare_for_JSON(properties)
+        
+        saveFileName = join(self.saveFileFolder,"eRing_pSig_") + str(round(self.polSigma, RoundDec)).replace('.', '_')\
+        + "_elong_" + str(round(self.elongation, RoundDec)).replace('.', '_')\
+        + "_R_" + str(round(self.startR, RoundDec)).replace('.', '_')\
+        + "_Z_" + str(round(self.startZ, RoundDec)).replace('.', '_').replace('-', 'neg')\
+        + ".txt"
+          
+        with open(saveFileName, 'w') as save_file:
+             save_file.write(json.dumps(properties))
+             
              
 class Helical(RadDist):
     # this class will have specifically helical radiation distributions
@@ -750,6 +820,9 @@ class Helical(RadDist):
             self.time = properties["time"]
             
         self.distType = "Helical"
+        
+        if Mode == "Build":
+            self.make_build_mode()
             
     def make_build_mode(self):
         self.tokamak.set_fieldline(StartR = self.startR, StartZ = self.startZ,\
