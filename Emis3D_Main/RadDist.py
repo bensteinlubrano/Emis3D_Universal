@@ -513,6 +513,11 @@ class RadDist(object):
             phiLeft = self.tokamak.injectionPhiTor - (2.0 * np.pi)
             phiRight = self.tokamak.injectionPhiTor
             
+        elif self.tokamak.tokamakName=="DIIID":
+            ax.set_zlim3d(-2.2 * minorRadius, 2.2 * minorRadius)
+            phiLeft = self.tokamak.injectionPhiTor - (2.0 * np.pi)
+            phiRight = self.tokamak.injectionPhiTor
+            
         ax.set_ylim3d(phiLeft, phiRight)
         ax.view_init(elev=20.0, azim=200)
         #ax.view_init(elev=20.0, azim=0)
