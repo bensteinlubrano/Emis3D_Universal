@@ -355,13 +355,15 @@ class RadDist(object):
             self.boloCameras_powers_2nd.append(array_powers)
             
     
-    def plot_in_round(self, Title = "Radiation Distribution",\
+    def plot_in_round_old(self, Title = "Radiation Distribution",\
                  FromWhite = False, Resolution = 60, Alpha = 0.05):
         # Makes a 3d plot of the RadDist. Does not include any toroidal distribution overlay.
         # Radiation magnitude is described by color. Very low value points are removed entirely,
         # giving the general radiation structure shape. Nevertheless, the internal radiation
         # structure is obscured by the external; such is 3d plotting. Adjust resolution and alpha for
         # better viewing.
+        
+        # has angle of plotting off by pi/2
         
         # The sundial shaped thing shows the bins into which radiated power is separated.
         
@@ -442,6 +444,130 @@ class RadDist(object):
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
+        
+        return fig
+    
+    def plot_in_round_2(self, Title = "Radiation Distribution",\
+                 FromWhite = False, Resolution = 60, Alpha = 0.05):
+        
+        # Makes a 3d plot of the RadDist. Does not include any toroidal distribution overlay.
+        # Radiation magnitude is described by color. Very low value points are removed entirely,
+        # giving the general radiation structure shape. Nevertheless, the internal radiation
+        # structure is obscured by the external; such is 3d plotting. Adjust resolution and alpha for
+        # better viewing.
+        
+        if self.tokamak.mode != "Build":
+            print("The tokamak object of this RadDist is not in Build mode. To use this function,\
+                  Either pass Tokamak = [a tokamak object with mode == 'Build'], or pass\
+                  Tokamak = None and Mode = 'Build' to this RadDist")
+            sys.exit(1)
+        
+        majorRadius = self.tokamak.majorRadius
+        minorRadius = self.tokamak.minorRadius
+        
+        # just so the intervals are nice whole-ish numbers if Resolution is even
+        resolution = Resolution + 1
+        
+        # setup for rad power bubble plot thing
+        
+        xRes = math.ceil(Resolution*(2.0*minorRadius))
+        yRes = math.ceil(Resolution*(2.0*math.pi))
+        zRes = math.ceil(Resolution*(4.4*minorRadius))
+        
+        evalRs = np.linspace(majorRadius - minorRadius, majorRadius + minorRadius, xRes)
+        evalPhis = np.linspace(-np.pi, np.pi, yRes)
+        evalZs = np.linspace(-2.2*minorRadius, 2.2*minorRadius, zRes)
+                        
+        functionVals = []
+        plotZs= []
+        plotXs=[]
+        plotYs=[]
+        
+        for evalR in evalRs:
+            for evalZ in evalZs:
+                if self.tokamak.wallcurve.contains_points([(evalR, evalZ)]):
+                    for evalPhi in evalPhis:
+                            evalX, evalY = RPhi_To_XY(evalR, evalPhi)
+                            
+                            functionVal = self.evaluate_both_punc(evalX, evalY, evalZ)
+                            plotZs.append(evalZ)
+                            plotXs.append(evalX)
+                            plotYs.append(evalY)
+                            functionVals.append(functionVal)
+        
+        # convert to RGB scale
+        functionMax = np.max(functionVals)
+        functionVals = [math.floor(255 * x / functionMax) for x in functionVals]
+        
+        # Delete points where radiated power is less than 1% of maximum
+        negligible = np.argwhere(functionVals < (0.01 * functionMax))
+        functionVals = np.delete(functionVals, negligible)
+        plotZs = np.delete(plotZs, negligible)
+        plotXs = np.delete(plotXs, negligible)
+        plotYs = np.delete(plotYs, negligible)
+        
+        # create plot and set bounds
+        fig = plt.figure()
+        ax = plt.axes(projection = '3d')
+        plotlimit = majorRadius + minorRadius
+        ax.set_xlim3d(-plotlimit, plotlimit)
+        ax.set_ylim3d(-plotlimit, plotlimit)
+        ax.set_zlim3d(-plotlimit, plotlimit)
+        
+        # evaluate function scatter plot.
+        if FromWhite == True:
+            ax.scatter(plotXs, plotYs, plotZs, c = plt.cm.Purples(functionVals),
+                            alpha = Alpha)
+        else:
+            ax.scatter(plotXs, plotYs, plotZs, c = plt.cm.plasma(functionVals),
+                            alpha = Alpha)
+            
+        # setup for tokamak sundial thing (shows inner first wall radius,
+        # outer first wall radius, and bin dividers)
+        theta = np.linspace(0, 2 * np.pi, resolution)
+        majorRadius = self.tokamak.majorRadius
+        minorRadius = self.tokamak.minorRadius
+        outerX = (majorRadius + minorRadius) * np.cos(theta)
+        outerY = (majorRadius + minorRadius) * np.sin(theta)
+        Z = np.zeros(Resolution + 1)
+        
+        innerX = (majorRadius - minorRadius) * np.cos(theta)
+        innerY = (majorRadius - minorRadius) * np.sin(theta)
+        
+        # each column of these resulting arrays is for one line
+        binBorderThetas = np.reshape(np.linspace(0, 2 * np.pi, self.numBins+1), (1,-1))
+        borderNums = np.reshape(np.linspace(majorRadius - minorRadius,\
+                               majorRadius + minorRadius,\
+                                   resolution), (-1, 1))
+        borderXs = borderNums @ np.cos(binBorderThetas)
+        borderYs = borderNums @ np.sin(binBorderThetas)
+        
+        # inboard midplane ring
+        ax.plot(innerX, innerY, Z, color = '#00ceaa')
+        # outboard midplane ring
+        ax.plot(outerX, outerY, Z, color = '#00ceaa')
+        # bin border lines
+        for borderNum in range(self.numBins):
+            ax.plot(borderXs[:,borderNum], borderYs[:,borderNum], Z, color = '#00ceaa')
+          
+        # For plotting first wall contours
+        r = self.tokamak.wallcurve.vertices[:,0]
+        z = self.tokamak.wallcurve.vertices[:,1]
+        ax.plot3D(r,[0.0]*len(r),z, 'orange')
+        ax.plot3D(-1.0*r,[0.0]*len(r),z, 'orange')
+        ax.plot3D([0.0]*len(r), r, z, 'orange')
+        ax.plot3D([0.0]*len(r), -1.0*r, z, 'orange')
+        
+        ax.set_title(Title)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        
+        """
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_zticks([])
+        """
         
         return fig
     
@@ -884,6 +1010,75 @@ class Helical(RadDist):
         + "_t_" + str(round(self.time, RoundDec)).replace('.', '_')\
         + "_R_" + str(round(self.startR, RoundDec)).replace('.', '_')\
         + "_Z_" + str(round(self.startZ, RoundDec)).replace('.', '_').replace('-', 'neg')\
+        + ".txt"
+          
+        with open(saveFileName, 'w') as save_file:
+             save_file.write(json.dumps(properties))
+             
+class Sphere(RadDist):
+    # these structures are uniform spheres of emissivity
+    def __init__(self, NumBins = 18, Tokamak = None,\
+               Mode = "Analysis", LoadFileName = None,\
+               StartR = 1.2, StartZ = 0.0, Radius = .5,\
+               Phi = 0, SaveFileFolder=None):
+        super(Sphere, self).__init__(NumBins = NumBins,\
+             NumPuncs = 1, Tokamak = Tokamak,\
+             Mode = Mode, LoadFileName = LoadFileName,\
+             SaveFileFolder=SaveFileFolder)
+        
+        if LoadFileName == None:
+            if StartR == None:
+                self.startR = self.tokamak.majorRadius
+            else:
+                self.startR = StartR
+            self.startZ = StartZ
+            self.radius = Radius
+            self.phi = Phi
+        else:
+            with open(LoadFileName) as file:
+                properties = json.load(file)
+            self.startR = properties["startR"]
+            self.startZ = properties["startZ"]
+            self.radius = properties["radius"]
+            self.phi = properties["phi"]
+        
+        self.distType = "Sphere"
+        
+    def make_build_mode(self):
+        # toroidals need no additions for build mode
+        pass
+        
+   
+    def evaluate(self, x,y,z, EvalFirstPunc, EvalSecondPunc):
+        
+        # first we need to convert from x,y,z to R,Z,phi
+        
+        
+        startX, startY = RPhi_To_XY(self.startR, self.phi)
+        
+
+        if EvalFirstPunc:
+            #Any point outside of major radius of Tokamak has no emisivisty  
+            if((x-startX)**2 + (y-startY)**2 + (z-self.startZ)**2 < self.radius**2):
+                localEmis = 1
+            else: 
+                localEmis = 0
+            return localEmis
+            
+        if EvalSecondPunc:
+            
+            return 0.0
+        
+    def save_RadDist(self, RoundDec = 2):
+        #[saves radiation distribution to a file]
+        
+        properties = self._dict_
+        properties = self.prepare_for_JSON(properties)
+        
+        saveFileName = join(self.saveFileFolder,"sphere_radius_") + str(round(self.radius, RoundDec)).replace('.', '_')\
+        + "phi" + str(round(self.phi, RoundDec)).replace('.', '_')\
+        + "R" + str(round(self.startR, RoundDec)).replace('.', '_')\
+        + "Z" + str(round(self.startZ, RoundDec)).replace('.', '_').replace('-', 'neg')\
         + ".txt"
           
         with open(saveFileName, 'w') as save_file:
