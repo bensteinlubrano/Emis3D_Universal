@@ -447,8 +447,8 @@ class RadDist(object):
         
         return fig
     
-    def plot_in_round_2(self, Title = "Radiation Distribution",\
-                 FromWhite = False, Resolution = 60, Alpha = 0.05):
+    def plot_in_round(self, Title = None, ShowFirstWall=True,\
+                 FromWhite = False, Resolution = 10, Alpha = 0.1):
         
         # Makes a 3d plot of the RadDist. Does not include any toroidal distribution overlay.
         # Radiation magnitude is described by color. Very low value points are removed entirely,
@@ -470,12 +470,12 @@ class RadDist(object):
         
         # setup for rad power bubble plot thing
         
-        xRes = math.ceil(Resolution*(2.0*minorRadius))
-        yRes = math.ceil(Resolution*(2.0*math.pi))
-        zRes = math.ceil(Resolution*(4.4*minorRadius))
+        rRes = math.ceil(Resolution)
+        phiRes = math.ceil(3.0*np.pi*Resolution)
+        zRes = math.ceil(Resolution*2.2)
         
-        evalRs = np.linspace(majorRadius - minorRadius, majorRadius + minorRadius, xRes)
-        evalPhis = np.linspace(-np.pi, np.pi, yRes)
+        evalRs = np.linspace(majorRadius - minorRadius, majorRadius + minorRadius, rRes)
+        evalPhis = np.linspace(-np.pi, np.pi, phiRes)
         evalZs = np.linspace(-2.2*minorRadius, 2.2*minorRadius, zRes)
                         
         functionVals = []
@@ -524,44 +524,51 @@ class RadDist(object):
             
         # setup for tokamak sundial thing (shows inner first wall radius,
         # outer first wall radius, and bin dividers)
-        theta = np.linspace(0, 2 * np.pi, resolution)
+        theta = np.linspace(0, 2 * np.pi, self.numBins+1)
         majorRadius = self.tokamak.majorRadius
         minorRadius = self.tokamak.minorRadius
         outerX = (majorRadius + minorRadius) * np.cos(theta)
         outerY = (majorRadius + minorRadius) * np.sin(theta)
-        Z = np.zeros(Resolution + 1)
+        outerZ = np.zeros(self.numBins+1)
         
         innerX = (majorRadius - minorRadius) * np.cos(theta)
         innerY = (majorRadius - minorRadius) * np.sin(theta)
+        innerZ = np.zeros(self.numBins+1)
         
         # each column of these resulting arrays is for one line
         binBorderThetas = np.reshape(np.linspace(0, 2 * np.pi, self.numBins+1), (1,-1))
         borderNums = np.reshape(np.linspace(majorRadius - minorRadius,\
                                majorRadius + minorRadius,\
-                                   resolution), (-1, 1))
+                                   2), (-1, 1))
         borderXs = borderNums @ np.cos(binBorderThetas)
         borderYs = borderNums @ np.sin(binBorderThetas)
+        borderZs = np.zeros(2)
         
         # inboard midplane ring
-        ax.plot(innerX, innerY, Z, color = '#00ceaa')
+        ax.plot(innerX, innerY, innerZ, color = '#00ceaa')
         # outboard midplane ring
-        ax.plot(outerX, outerY, Z, color = '#00ceaa')
+        ax.plot(outerX, outerY, outerZ, color = '#00ceaa')
         # bin border lines
         for borderNum in range(self.numBins):
-            ax.plot(borderXs[:,borderNum], borderYs[:,borderNum], Z, color = '#00ceaa')
+            ax.plot(borderXs[:,borderNum], borderYs[:,borderNum], borderZs, color = '#00ceaa')
           
         # For plotting first wall contours
-        r = self.tokamak.wallcurve.vertices[:,0]
-        z = self.tokamak.wallcurve.vertices[:,1]
-        ax.plot3D(r,[0.0]*len(r),z, 'orange')
-        ax.plot3D(-1.0*r,[0.0]*len(r),z, 'orange')
-        ax.plot3D([0.0]*len(r), r, z, 'orange')
-        ax.plot3D([0.0]*len(r), -1.0*r, z, 'orange')
+        if ShowFirstWall:
+            r = self.tokamak.wallcurve.vertices[:,0]
+            z = self.tokamak.wallcurve.vertices[:,1]
+            ax.plot3D(r,[0.0]*len(r),z, 'orange')
+            ax.plot3D(-1.0*r,[0.0]*len(r),z, 'orange')
+            ax.plot3D([0.0]*len(r), r, z, 'orange')
+            ax.plot3D([0.0]*len(r), -1.0*r, z, 'orange')
         
-        ax.set_title(Title)
+        if (Title is not None):
+            ax.set_title(Title)
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
+        
+        fig.subplots_adjust(left=0.1, right=0.9, bottom=0, top=0.9)
+        plt.tight_layout()
         
         """
         ax.set_xticks([])
