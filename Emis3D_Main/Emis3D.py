@@ -477,6 +477,8 @@ class Emis3D(object):
         for i in range(len(plotDistsRadPowers)):
             if plotDistsRadPowers[i] > (10.0 * bestFitRadPower):
                 plotDistsRadPowers[i] = 0.0
+            elif np.isnan(plotDistsRadPowers[i]):
+                plotDistsRadPowers[i] = 0.0
         
         levels = np.linspace(0, max(plotDistsRadPowers)/1e9, num=20)
         
