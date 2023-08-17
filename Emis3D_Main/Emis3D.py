@@ -56,12 +56,21 @@ class Emis3D(object):
         
         self.allRadDistsVec = []
         
-        # returns all files in RadDist_Saves folder
-        onlyfiles = [f for f in listdir(self.raddist_saves_directory)\
-                     if isfile(join(self.raddist_saves_directory, f))]
+        if TokamakName == "JET":
+            # returns all files in self.raddist_directories_to_load
+            onlyfiles = []
+            for directory in self.raddist_directories_to_load:
+                raddistfiles = [join(directory,f) for f in listdir(directory)\
+                         if isfile(join(directory, f))]
+                for f in raddistfiles:
+                    onlyfiles.append(f)
+        else:
+            # returns all files in RadDist_Saves folder
+            onlyfiles = [join(self.raddist_saves_directory, f) for f in listdir(self.raddist_saves_directory)\
+                         if isfile(join(self.raddist_saves_directory, f))]
         
         for distIndx in range(len(onlyfiles)):
-            loadFileName = join(self.raddist_saves_directory,onlyfiles[distIndx])
+            loadFileName = onlyfiles[distIndx]
             radDist = self.load_single_raddist(LoadFileName = loadFileName)
             
             self.allRadDistsVec.append(radDist)
