@@ -545,3 +545,189 @@ class CherabBasicBolometer(Bolometer):
 
         
         self.bolometer_camera = bolometer_camera
+        
+class UnparametrizedBolometer(object):
+    '''
+    Individual Bolometers (or sets of bolometers sharing an aperature) within a bolometer camera.
+    *Not* using Matt Reinke's bolometer parametrization scheme like the other bolometer class does
+    '''
+    def __init__(self, BoloConfigFile, World, IndicatorLights):
+        self.world = World
+        self.boloConfigFile = self.reformat_Bolo_Config_File(BoloConfigFile) # filename of configuration    
+        self.indicatorLights=IndicatorLights
+        self.dtype = None # diagnostic type
+        self.notes = None
+        
+        self.aperature_x=None  # major radius of aperture (m)
+        self.aperature_y=None  # height of aperture (m)
+        self.aperature_z=None # toroidal angle location of aperture (m)
+        self.aperature_width=None # aperture width (meters)
+        self.aperature_height=None  # aperture height (meters)
+        self.aperature_horizontal_vec=None
+        self.aperature_vertical_vec=None
+        
+        self.foil_x=None
+        self.foil_y=None
+        self.foil_z=None
+        self.foil_width=None
+        self.foil_height=None
+        self.foil_horizontal_vec=None
+        self.foil_vertical_vec=None
+        
+        self.etendues = None # etendue
+        self.etendue_errors = None
+        self.read_Bolo_Config_File()
+        
+            
+    def calc_etendues(self):
+        
+        raytraced_etendues = []
+        raytraced_errors = []
+        analytic_etendues = []
+        for foil in self.bolometer_camera:
+            raytraced_etendue, raytraced_error = foil.calculate_etendue(ray_count=400000, max_distance=2.0 * abs(self.x0[0]))
+            Adet = foil.x_width * foil.y_width
+            Aslit = foil.slit.dx * foil.slit.dy
+            costhetadet = foil.sightline_vector.normalise().dot(foil.normal_vector)
+            costhetaslit = foil.sightline_vector.normalise().dot(foil.slit.normal_vector)
+            distance = foil.centre_point.vector_to(foil.slit.centre_point).length
+            analytic_etendue = Adet * Aslit * costhetadet * costhetaslit / distance**2
+            print("{} raytraced etendue: {:.4g} +- {:.1g} analytic: {:.4g}".format(
+                foil.name, raytraced_etendue, raytraced_error, analytic_etendue))
+            raytraced_etendues.append(raytraced_etendue)
+            raytraced_errors.append(raytraced_error)
+            analytic_etendues.append(analytic_etendue)
+        self.etendues = raytraced_etendues
+        self.etendue_errors = raytraced_errors
+        
+    def add_etendue_configfile(self, BoloConfigFile):
+        filer = open(BoloConfigFile, 'r')
+        Lines = filer.readlines()
+        NewLines = Lines
+        filer.close()
+
+        filew = open(BoloConfigFile, 'w')        
+
+        NewLine1 = "etendues = "
+        NewLine2 = "etendue_errors = "
+        for i in range(len(self.etendues)):
+            NewLine1 = NewLine1 + str(self.etendues[i]) + "\n"
+            NewLine2 = NewLine2 + str(self.etendue_errors[i]) + "\n"
+            if i != len(self.etendues) - 1:
+                NewLine1 = NewLine1 + "\t"
+                NewLine2 = NewLine2 + "\t"
+
+        for i in range(len(Lines)):
+            if Lines[i][0:6] == "zeta_o":
+                NewLines.insert(i+1, NewLine1)
+                NewLines.insert(i+2, NewLine2)
+            else:
+                pass
+        
+        filew.writelines(NewLines)
+
+        filew.close()
+            
+
+    def reformat_Bolo_Config_File(self, BoloConfigFile):
+        '''
+        This function converts the bolo config files to 
+        INI config files. INI config files have supported reading and writing
+        modules in python, so this conversion is worthwhile to leverage those
+        tools. Returns a filename of a .ini file which is either the same as the
+        one passed in (if it was a .ini), or of the newly converted one.
+        '''
+
+        if BoloConfigFile[-3:] == 'ini':
+            return BoloConfigFile
+        else:
+            
+            filer = open(BoloConfigFile, 'r')
+            Lines = filer.readlines()
+
+            fn = BoloConfigFile[:-3] + 'ini'
+            filew = open(fn, 'w')        
+
+            NewLines = ['[Metadata]\n']
+            skipLine=0
+
+            for i in range(len(Lines)):
+                if skipLine:
+                    skipLine=0
+                else:
+                    cleanThisLine = Lines[i].replace('\xa0', ' ')
+                    cleanThisLine = cleanThisLine.replace(';', '\ndone')
+                    cleanThisLine = cleanThisLine.split('done',1)[0]
+                    if cleanThisLine[0:11] == '###NOTES###':
+                        cleanNextLine = Lines[i+1].replace('\xa0', ' ')
+                        NewLines.append('notes = ' + cleanNextLine)
+                        skipLine=1
+
+                    elif cleanThisLine[0:16] == '###DATA START###':
+                        NewLines.append('[Data]\n')
+
+                    elif cleanThisLine[0:14] == '###DATA END###':
+                        # do nothing
+                        pass
+                    else:
+                        NewLines.append(cleanThisLine)
+
+
+            filew.writelines(NewLines)
+
+            filer.close()
+            filew.close()
+
+            return fn
+            
+
+    def read_Bolo_Config_File(self):
+        '''
+        Here we assume the config file is already in .ini format. Use configparser
+        and read in this file to fields of this object.
+        '''
+        config = configparser.ConfigParser()
+        config.read(self.boloConfigFile)
+
+        
+        self.name =config['Metadata']['name']
+        self.dtype =config['Metadata']['type'] # diagnostic type
+        self.notes = config['Metadata']['notes']
+        
+        self.aperature_center=np.array(config['Data']['aperature_center'].split(','), dtype=float)
+        self.aperature_width=float(config['Data']['aperature_width'])
+        self.aperature_height=float(config['Data']['aperature_height'])
+        self.aperature_horizontal_vec=np.array(config['Data']['aperature_horizontal_vec'].split(','), dtype=float)
+        self.aperature_vertical_vec=np.array(config['Data']['aperature_vertical_vec'].split(','), dtype=float)
+        
+        self.foil_center=np.array(config['Data']['foil_center'].split(','), dtype=float)
+        self.foil_width=float(config['Data']['foil_width'])
+        self.foil_height=float(config['Data']['foil_height'])
+        self.foil_horizontal_vec=np.array(config['Data']['foil_horizontal_vec'].split(','), dtype=float)
+        self.foil_vertical_vec=np.array(config['Data']['foil_vertical_vec'].split(','), dtype=float)
+        
+        self.foil_center = Point3D(self.foil_center[0],\
+                                    self.foil_center[1],\
+                                    self.foil_center[2])
+        self.aperature_center = Point3D(self.aperature_center[0],\
+                                         self.aperature_center[1],\
+                                         self.aperature_center[2])
+        self.aperature_horizontal_vec = Vector3D(self.aperature_horizontal_vec[0],\
+                                            self.aperature_horizontal_vec[1],\
+                                            self.aperature_horizontal_vec[2])
+        self.aperature_vertical_vec = Vector3D(self.aperature_vertical_vec[0],\
+                                            self.aperature_vertical_vec[1],\
+                                            self.aperature_vertical_vec[2])
+        self.foil_horizontal_vec = Vector3D(self.foil_horizontal_vec[0],\
+                                            self.foil_horizontal_vec[1],\
+                                            self.foil_horizontal_vec[2])
+        self.foil_vertical_vec = Vector3D(self.foil_vertical_vec[0],\
+                                            self.foil_vertical_vec[1],\
+                                            self.foil_vertical_vec[2])
+        try:
+            etendues = config['Data']['etendues'].splitlines()
+            self.etendues = [float(x) for x in etendues]
+            etendue_errors = config['Data']['etendues'].splitlines()
+            self.etendue_errors = [float(x) for x in etendue_errors]
+        except:
+            pass
