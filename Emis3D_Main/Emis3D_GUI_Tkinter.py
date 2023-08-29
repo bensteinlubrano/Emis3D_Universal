@@ -520,10 +520,10 @@ class Emis3D_GUI(object):
         #self.display_kb1_powers(Container=Container, Emis3DObject = Emis3DObject)
         if self.makeBoloContoursToggle.config('relief')[-1] == 'sunken':
             Emis3DObject.save_all_contour_plots()
-        """
+        
         if self.makeMovieToggle.config('relief')[-1] == 'sunken':
             Emis3DObject.make_unwrapped_movie(MovePeak=MovePeak)
-            """
+        
         if self.makeCrossSecsToggle.config('relief')[-1] == 'sunken':
             Emis3DObject.make_crossSec_movie()
         
