@@ -578,7 +578,8 @@ class RadDist(object):
         
         return fig
     
-    def plot_unwrapped(self, SpotSize = 20, FromWhite = False, Resolution = 20, Alpha = 0.005):
+    def plot_unwrapped(self, TorDistFunc = None,\
+        SpotSize = 20, FromWhite = False, Resolution = 20, Alpha = 0.005):
         
         # Makes a 3d plot of the RadDist, unwrapped. Does not include any toroidal distribution overlay.
         # Radiation magnitude is described by color. Very low value points are removed entirely,
@@ -614,7 +615,13 @@ class RadDist(object):
                     for evalPhi in evalPhis:
                             evalX, evalY = RPhi_To_XY(evalR, evalPhi)
                             
-                            functionVal = self.evaluate_both_punc(evalX, evalY, evalZ)
+                            if TorDistFun is None:
+                                functionVal = self.evaluate_both_punc(evalX, evalY, evalZ)
+                            else:
+                                functionValFirst = self.evaluate_first_punc(evalX, evalY, evalZ)
+                                functionValSecond = self.evaluate_second_punc(evalX, evalY, evalZ)
+
+                                functionVal = functionValFirst + functionValSecond
                                 
                             plotRs.append(evalR)
                             plotPhis.append(evalPhi)
