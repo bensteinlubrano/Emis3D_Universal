@@ -525,7 +525,7 @@ class Emis3D_GUI(object):
             Emis3DObject.make_unwrapped_movie(MovePeak=MovePeak)
         
         if self.makeCrossSecsToggle.config('relief')[-1] == 'sunken':
-            Emis3DObject.make_crossSec_movie()
+            Emis3DObject.make_crossSec_movie(MovePeak=MovePeak)
         
     def display_kb1_powers(self, Container, Emis3DObject):
         

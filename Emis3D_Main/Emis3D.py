@@ -20,7 +20,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter
 from Util import RedChi2_To_Pvalue
-from scipy.optimize import minimize
+from scipy.optimize import minimize, curve_fit
 from copy import copy
 
 class Emis3D(object):
@@ -50,7 +50,8 @@ class Emis3D(object):
         self.minRadDist = None
         self.minRadDistList = None
         self.minPreScaleList = None
-        self.minRadDistFits = None
+        self.minFitsFirsts = None
+        self.minFitsSeconds = None
         
     def load_raddists(self, TokamakName):
         
@@ -138,8 +139,8 @@ class Emis3D(object):
         
         return chisqlist, pValList, fitsBoloFirsts, fitsBoloSeconds, channel_errs, preScales
             
-    # calculates reduced chi^2 values for radiation structure library for one timestep
     def calc_fits(self, Etime, ErrorPool = False, PvalCutoff = None):
+        # calculates reduced chi^2 values for radiation structure library for one timestep
         
         if len(self.allRadDistsVec) == 0:
             self.load_raddists(TokamakName = self.tokamakAMode.tokamakName)
@@ -199,9 +200,10 @@ class Emis3D(object):
             return self.gaussian(Phi=Phi, Sigma=Sigma, Mu=Mu,
                                  Amplitude=Amplitude, OffsetVert=OffsetVert) / coeff
     
-    # Returns an asymmetric gaussian. Implemented to handle arrays, since the curve_fit
-    # function seems to need that
     def asymmetric_gaussian_arr(self, Phi, SigmaLeft, SigmaRight, Amplitude, Mu=None):
+        # Returns an asymmetric gaussian. Implemented to handle arrays, since the curve_fit
+        # function seems to need that
+
         if hasattr(Mu, "__len__"):
             mu=Mu
         elif Mu==None:
@@ -229,7 +231,50 @@ class Emis3D(object):
                         Amplitude=Amplitude, OffsetVert=0.0)   
         
         return yval
+
+    def fit_asym_gaussian(self, PhiCoords = np.array([-2.0, -1.0, 1.0, 2.0]),\
+                               FitYVals = np.array([3.0, 4.0, 3.0, 0.01]),\
+                               ParametersGuess = np.array([1.0, 1.0, 2.2, np.nan]),\
+                               MovePeak = False, PlotFit = False, MaxIters=800):
+
+        if not MovePeak:
+            parametersGuess = ParametersGuess[0:3]
+            parameters = curve_fit(f=self.asymmetric_gaussian_arr, xdata=PhiCoords,\
+                           ydata=FitYVals, p0=parametersGuess,\
+                           bounds = [(0.0, 0.0, 0.0),\
+                                     (np.inf, np.inf, np.inf)], maxfev=MaxIters)[0]
+    
+            sigmaLeft, sigmaRight, amplitude =\
+                parameters[0], parameters[1], parameters[2]
+            mu = self.tokamakAMode.injectionPhiTor
+        else:
+            parametersGuess = ParametersGuess
+            if np.isnan(ParametersGuess[3]):
+                parametersGuess[3] = self.tokamakAMode.injectionPhiTor
+            parameters = curve_fit(f=self.asymmetric_gaussian_arr, xdata=PhiCoords,\
+                               ydata=FitYVals, p0=ParametersGuess,\
+                               bounds = [(0.0, 0.0, 0.0, - np.pi),\
+                                         (np.inf, np.inf, np.inf, np.pi)], maxfev=MaxIters)[0]
+    
+            sigmaLeft, sigmaRight, amplitude, mu =\
+                parameters[0], parameters[1], parameters[2], parameters[3]
+        
+        if PlotFit:
+            xvalues = np.linspace(-2.0 * math.pi, 2.0 * math.pi, 100)
+            yvalues = self.asymmetric_gaussian_arr(Phi=xvalues, SigmaLeft = sigmaLeft,\
+                SigmaRight = sigmaRight, Amplitude = amplitude, Mu=mu)
             
+            xaxisLabel = "Toroidal Angle"
+            yaxisLabel = "Radiated Power"
+            plt.scatter(PhiCoords, FitYVals, label = "Puncture Values")
+            plt.plot(xvalues, yvalues, 'r', label = "Asymmetric Gaussian Fit");
+            plt.xlabel(xaxisLabel)
+            plt.ylabel(yaxisLabel)
+            plt.legend()
+            plt.show()
+            
+        return sigmaLeft, sigmaRight, amplitude, mu
+
     def calc_rad_error(self, PvalCutoff, MovePeak):
         # finds error bar ranges of rad power and tpf for a single timestep
         
@@ -332,9 +377,9 @@ class Emis3D(object):
         self.upperTotWrad = self.upperAccumWrads[-1]
         self.lowerTotWrad = self.lowerAccumWrads[-1]
     
-    # Output data from Emis3D as an excel file
     def output_to_excel(self):
-        
+        # Output data from Emis3D as an excel file
+
         import pandas as pd
         
         # choose which variables to output to file, and what names they get in excel file
@@ -454,8 +499,7 @@ class Emis3D(object):
             ColorBarLabel='$\chi^2_r$', PlotDistType=PlotDistType)
         
         return fig
-        
-    
+         
     def plot_powers_array(self, Lengthx=3, Lengthy=4, Etime = 50.89, PlotDistType = "Helical",\
                           MovePeak=False):
         
@@ -715,8 +759,14 @@ class Emis3D(object):
         self.save_bolos_contour_plot(Times = simTimebase, Bolo_vals = simData,\
             Title = Title, SaveName = SaveName, SaveFolder = SaveFolder)
         
-    def make_crossSec_movie(self, Phi=0.0):
+    def make_crossSec_movie(self, Phi=None, MovePeak=False):
+        # not yet functional
+        # will have to dig into Emis3D_JET, calc_rad_power and asymmetric gaussian process
+        # to make this work
         
+        if Phi==None:
+            Phi=self.tokamakAMode.injectionPhiTor
+
         self.load_tokamak(Mode="Build")
         numFillZeros = len(str(len(self.minRadDistList)))
         for radDistNum in range(len(self.minRadDistList)):
@@ -726,7 +776,21 @@ class Emis3D(object):
             radDist.set_tokamak(self.tokamakBMode)
             radDist.make_build_mode()
             
-            crossSecPlot = radDist.plot_crossSec(Phi=Phi)
+            if radDist.distType == "Helical":
+
+                sigmaLeft, sigmaRight, amplitude, mu =\
+                    self.find_asym_gaussian_parameters(\
+                    FitsFirsts=self.minFitsFirsts[radDistNum],\
+                    FitsSeconds=self.minFitsSeconds[radDistNum], MovePeak=MovePeak)
+
+                def torDistFunc(Phi0):
+                    val = self.asymmetric_gaussian_arr(Phi=Phi0, SigmaLeft=sigmaLeft, SigmaRight=sigmaRight,\
+                        Amplitude=amplitude, Mu=mu)
+                    return val
+
+                crossSecPlot = radDist.plot_crossSec(Phi=Phi, TorDistFunc = torDistFunc)
+            else:
+                crossSecPlot = radDist.plot_crossSec(Phi=Phi)
 
             crossSecPlot.savefig(savefile, format='png')
             plt.close(crossSecPlot)

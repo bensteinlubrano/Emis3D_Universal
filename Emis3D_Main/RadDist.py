@@ -84,10 +84,10 @@ class RadDist(object):
     def evaluate_both_punc(self, X,Y,Z):
         return self.evaluate_first_punc(X,Y,Z) + self.evaluate_second_punc(X,Y,Z)
         
-    # Various tokamaks use different toroidal angle conventions than Cherab. Emis3D uses the Cherab
-    # Angle convention. self.tokamak.torConventionPhi accounts for this difference
     def evaluate_first_punc_cherab(self, X,Y,Z):
-        
+        # Various tokamaks use different toroidal angle conventions than Cherab. Emis3D uses the Cherab
+        # Angle convention. self.tokamak.torConventionPhi accounts for this difference
+
         r, phi = XY_To_RPhi(X,Y)
         x,y = RPhi_To_XY(r, phi - self.tokamak.torConventionPhi)
                 
@@ -106,9 +106,9 @@ class RadDist(object):
         evalBoth = self.evaluate_first_punc(x,y,Z) + self.evaluate_second_punc(x,y,Z)
         return evalBoth
     
-    # Calculates total radiated power per solid angle emitted inside
-    # a toroidal region with emissivity function from evaluate function
     def power_per_bin_calc(self, Errfrac = 0.01, Pointsupdate = int(1e5)):
+        # Calculates total radiated power per solid angle emitted inside
+        # a toroidal region with emissivity function from evaluate function
     
         # Various possible errors
         if (self.numPuncs != 1) and (self.numPuncs != 2):
@@ -353,7 +353,6 @@ class RadDist(object):
                     observeVal = 0.0
                 array_powers.append(observeVal)
             self.boloCameras_powers_2nd.append(array_powers)
-            
     
     def plot_in_round_old(self, Title = "Radiation Distribution",\
                  FromWhite = False, Resolution = 60, Alpha = 0.05):
@@ -581,7 +580,9 @@ class RadDist(object):
     def plot_unwrapped(self, TorDistFunc = None,\
         SpotSize = 20, FromWhite = False, Resolution = 20, Alpha = 0.005):
         
-        # Makes a 3d plot of the RadDist, unwrapped. Does not include any toroidal distribution overlay.
+        # Makes a 3d plot of the RadDist, unwrapped. Toroidal distribution overlay
+        # is only set up for helicals so far, and has not been tested.
+
         # Radiation magnitude is described by color. Very low value points are removed entirely,
         # giving the general radiation structure shape. Nevertheless, the internal radiation
         # structure is obscured by the external; such is 3d plotting. Adjust resolution and alpha for
@@ -620,6 +621,19 @@ class RadDist(object):
                             else:
                                 functionValFirst = self.evaluate_first_punc(evalX, evalY, evalZ)
                                 functionValSecond = self.evaluate_second_punc(evalX, evalY, evalZ)
+                                
+                                # Need to reconsider these for 0s vs injector locations...
+                                # First Puncture
+                                functionValFirst = functionValFirst *\
+                                        TorDistFunc(Phi = evalPhi)
+                                
+                                # Second Puncture
+                                if evalPhi >= self.tokamak.injectionPhiTor:
+                                    functionValSecond = functionValSecond *\
+                                        TorDistFunc(Phi = evalPhi - (2.0 * math.pi))
+                                else:
+                                    functionValSecond = functionValSecond *\
+                                        TorDistFunc(Phi = evalPhi + (2.0 * math.pi))
 
                                 functionVal = functionValFirst + functionValSecond
                                 
@@ -706,7 +720,7 @@ class RadDist(object):
         
         return fig
     
-    def plot_crossSec(self, Phi = 0.0):
+    def plot_crossSec(self, Phi = 0.0, TorDistFunc=None):
         # Makes a 2d plot of the RadDist at a given phi location. Phi is in radians.
         # Does not include any toroidal distribution overlay.
         
@@ -718,6 +732,11 @@ class RadDist(object):
         
         fig = plt.figure()
         ax = plt.axes()
+
+        if TorDistFunc != None:
+            firstPuncTorFactor = TorDistFunc(Phi0=Phi)
+            secondPuncClockwiseTorFactor = TorDistFunc(Phi0 = Phi-(2.0*np.pi))
+            secondPuncAntiClockwiseTorFactor = TorDistFunc(Phi0 = Phi+(2.0*np.pi))
         
         # make 2d grids of r, z, and emissivity values (all start at 0)
         r = np.linspace(self.tokamak.majorRadius-self.tokamak.minorRadius,\
@@ -738,7 +757,17 @@ class RadDist(object):
                 y = ygrid[i,j]
                 z1 = zgrid[i,j]
                 
-                emis[i,j] += self.evaluate_both_punc(x,y,z1)
+                if TorDistFunc == None:
+                    emis[i,j] += self.evaluate_both_punc(x,y,z1)
+                else:
+                    emis[i,j] += self.evaluate_first_punc(x,y,z1) * firstPuncTorFactor
+                    
+                    if phi >= self.tokamak.injectionPhiTor:
+                        emis[i,j] += self.evaluate_second_punc(x,y,z1) *\
+                            secondPuncClockwiseTorFactor
+                    else:
+                        emis[i,j] += self.evaluate_second_punc(x,y,z1) *\
+                            secondPuncAntiClockwiseTorFactor
 
         # make 2d plot
         ax.contourf(r,z, emis, levels=20, cmap="Blues")
