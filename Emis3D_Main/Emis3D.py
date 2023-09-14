@@ -6,7 +6,7 @@ Created on Mon Apr 10 15:55:26 2023
 @author: br0148
 """
 
-from os import listdir
+from os import listdir, remove
 from os.path import dirname, realpath, isfile, join
         
 FILE_PATH = dirname(realpath(__file__))
@@ -760,9 +760,8 @@ class Emis3D(object):
             Title = Title, SaveName = SaveName, SaveFolder = SaveFolder)
         
     def make_crossSec_movie(self, Phi=None, MovePeak=False):
-        # not yet functional
-        # will have to dig into Emis3D_JET, calc_rad_power and asymmetric gaussian process
-        # to make this work
+
+        import cv2
         
         if Phi==None:
             Phi=self.tokamakAMode.injectionPhiTor
@@ -794,27 +793,79 @@ class Emis3D(object):
 
             crossSecPlot.savefig(savefile, format='png')
             plt.close(crossSecPlot)
-        
-        """
-        import cv2
 
-        video_name = 'Animations/crossSecs.avi'
+        video_name = join(self.videos_output_directory, "crossSecs.avi")
 
-        images = [img for img in listdir(image_folder) if img.endswith(".png") and img.startswith('crossSecImg')]
+        images = [img for img in listdir(self.videos_output_directory)\
+            if img.endswith(".png") and img.startswith('crossSecImg')]
         images.sort()
-        frame = cv2.imread(join(image_folder, images[0]))
+        frame = cv2.imread(join(self.videos_output_directory, images[0]))
         height, width, layers = frame.shape
 
         video = cv2.VideoWriter(video_name, 0, 1, (width,height))
 
         for image in images:
-            video.write(cv2.imread(join(image_folder, image)))
+            video.write(cv2.imread(join(self.videos_output_directory, image)))
             
         for radDistNum in range(len(self.minRadDistList)):
-            savefile = join(image_folder, "crossSecImg") +\
+            savefile = join(self.videos_output_directory, "crossSecImg") +\
                         str(radDistNum).zfill(numFillZeros) + ".png"
             remove(savefile)
 
         video.release()
-        """
-        #return video
+
+    def make_unwrapped_movie(self,\
+        Resolution = 30, Alpha = 0.005, SpotSize=20, MovePeak=False):
+        import cv2
+
+        self.load_tokamak(Mode="Build")
+        numFillZeros = len(str(len(self.minRadDistList)))
+        
+        for radDistNum in range(len(self.minRadDistList)):
+            savefile = join(self.videos_output_directory, "radDistImg") +\
+                        str(radDistNum).zfill(numFillZeros) + ".png"
+            radDist = copy(self.minRadDistList[radDistNum])
+            radDist.set_tokamak(self.tokamakBMode)
+            radDist.make_build_mode()
+            
+            if radDist.distType == "Helical":
+
+                sigmaLeft, sigmaRight, amplitude, mu =\
+                    self.find_asym_gaussian_parameters(\
+                    FitsFirsts=self.minFitsFirsts[radDistNum],\
+                    FitsSeconds=self.minFitsSeconds[radDistNum], MovePeak=MovePeak)
+
+                def torDistFunc(Phi0):
+                    val = self.asymmetric_gaussian_arr(Phi=Phi0, SigmaLeft=sigmaLeft, SigmaRight=sigmaRight,\
+                        Amplitude=amplitude, Mu=mu)
+                    return val
+
+                radDistPlot = radDist.plot_unwrapped(TorDistFunc = torDistFunc,\
+                    SpotSize = SpotSize, Resolution=Resolution, Alpha=Alpha)
+            else:
+                radDistPlot = radDist.plot_unwrapped(\
+                    SpotSize = SpotSize, Resolution=Resolution, Alpha=Alpha)
+            
+            
+            radDistPlot.savefig(savefile, format='png')
+            plt.close(radDistPlot)
+
+        video_name = join(self.videos_output_directory, "unwrapped.avi")
+
+        images = [img for img in listdir(self.videos_output_directory) if img.endswith(".png") and img.startswith('radDistImg')]
+        images.sort()
+        frame = cv2.imread(join(self.videos_output_directory, images[0]))
+        height, width, layers = frame.shape
+
+        video = cv2.VideoWriter(video_name, 0, 1, (width,height))
+
+        for image in images:
+            video.write(cv2.imread(join(self.videos_output_directory, image)))
+
+        for radDistNum in range(len(self.minRadDistList)):
+            savefile = join(self.videos_output_directory, "radDistImg") +\
+                        str(radDistNum).zfill(numFillZeros) + ".png"
+            remove(savefile)
+
+        video.release()
+

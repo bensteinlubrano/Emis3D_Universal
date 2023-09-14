@@ -616,7 +616,7 @@ class RadDist(object):
                     for evalPhi in evalPhis:
                             evalX, evalY = RPhi_To_XY(evalR, evalPhi)
                             
-                            if TorDistFun is None:
+                            if TorDistFunc is None:
                                 functionVal = self.evaluate_both_punc(evalX, evalY, evalZ)
                             else:
                                 functionValFirst = self.evaluate_first_punc(evalX, evalY, evalZ)
@@ -625,15 +625,15 @@ class RadDist(object):
                                 # Need to reconsider these for 0s vs injector locations...
                                 # First Puncture
                                 functionValFirst = functionValFirst *\
-                                        TorDistFunc(Phi = evalPhi)
+                                        TorDistFunc(Phi0 = evalPhi)
                                 
                                 # Second Puncture
                                 if evalPhi >= self.tokamak.injectionPhiTor:
                                     functionValSecond = functionValSecond *\
-                                        TorDistFunc(Phi = evalPhi - (2.0 * math.pi))
+                                        TorDistFunc(Phi0 = evalPhi - (2.0 * math.pi))
                                 else:
                                     functionValSecond = functionValSecond *\
-                                        TorDistFunc(Phi = evalPhi + (2.0 * math.pi))
+                                        TorDistFunc(Phi0 = evalPhi + (2.0 * math.pi))
 
                                 functionVal = functionValFirst + functionValSecond
                                 
@@ -965,8 +965,7 @@ class ElongatedRing(RadDist):
           
         with open(saveFileName, 'w') as save_file:
              save_file.write(json.dumps(properties))
-             
-             
+                 
 class Helical(RadDist):
     # this class will have specifically helical radiation distributions
     def __init__(self, NumBins = 18, Tokamak = None,\
