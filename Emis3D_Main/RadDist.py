@@ -787,7 +787,13 @@ class RadDist(object):
     
     def observe_local_intensity(self, ApCenterPoint = [2.18, 0.68, 0.0],\
                                 FoilRotVec = [0.0, -np.pi/4.0, np.pi]):
-    
+    # aperature center point is r,z,phi
+    # foil rotation vector is the direction the "foil" is pointing in,
+    # the normal vector to the surface where the intensity is observed.
+    # first angle is [about the foil?],
+    # second angle is angle in x-z plane starting from horizontal outwards,
+    # third angle is angle in x-y plane starting from outwards
+
         if self.tokamak.mode != "Build":
             print("The tokamak object of this RadDist is not in Build mode. To use this function,\
                   Either pass Tokamak = [a tokamak object with mode == 'Build'], or pass Tokamak = None and Mode = 'Build'\
@@ -805,7 +811,7 @@ class RadDist(object):
             foil.render_engine.processes = 16
             # The following line sets the resolution of the sightline area viewed by each bolometer. Jack Lovell says this
             # number is reasonable.
-            foil.pixel_samples = 1e5
+            foil.pixel_samples = 1e6 # 1e5
         
         # The following ines define an emitting volume that the RadDist will evaluate functions are embedded in.
         # The parameters are set to encompass to entirety of the tokamak (this setup is for JET and smaller), and the -2.5 is to shift the
