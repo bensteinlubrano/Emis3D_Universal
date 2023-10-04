@@ -17,6 +17,7 @@ from Diagnostic import Synth_Brightness_Observer
 
 # raysect dependencies
 from raysect.core.math import translate
+from raysect.core.math.random import seed as raysectseed
 from raysect.optical.material import VolumeTransform
 from raysect.primitive import Cylinder
 
@@ -27,15 +28,32 @@ from copy import deepcopy
 class RadDist(object):
     
     def __init__(self, NumBins = 18, NumPuncs = 2, Tokamak = None,\
-                 Mode = "Analysis", LoadFileName = None, SaveFileFolder=None):
+                Mode = "Analysis", LoadFileName = None, SaveFileFolder=None,\
+                TorSegmented=False):
         #[creates radiation distribution from a given evaluate function]
         
+        self.tokamak = Tokamak
+        self.saveFileFolder=SaveFileFolder
+        self.torSegmented=TorSegmented
+        self.randSeed = 10 # arbitrary. Just always using the same one so results don't vary
+
         if LoadFileName == None:
             self.numBins = NumBins
             self.numPuncs = NumPuncs
             self.powerPerBin = []
             self.boloCameras_powers = []
             self.boloCameras_powers_2nd = []
+
+            if self.torSegmented:
+                # structure of segmented bolo powers lists is:
+                # cameras -> channels in each camera -> toroidal segments for each channel
+                self.bolo_powers_segmented = []
+                self.bolo_powers_segmented_2nd = []
+
+                # this is a bin index used in iterating over the bins to do a segmented
+                # observation. Necessary because the observe function takes functions of
+                # strictly three parameters, so this can't be passed in-line
+                self.tempObserverBin = None
         else:
             with open(LoadFileName) as file:
                 properties = json.load(file)
@@ -44,9 +62,17 @@ class RadDist(object):
             self.boloCameras_powers = properties["boloCameras_powers"]
             self.boloCameras_powers_2nd = properties["boloCameras_powers_2nd"]
             self.powerPerBin = properties["powerPerBin"]
-            
-        self.tokamak = Tokamak
-        self.saveFileFolder=SaveFileFolder
+            if self.torSegmented:
+                try:
+                    self.bolo_powers_segmented = properties["bolo_powers_segmented"]
+                    self.bolo_powers_segmented_2nd = properties["bolo_powers_segmented_2nd"]
+
+                    self.tempObserverBin = None
+                except:
+                    errStatement = """ Attempted to load a radiation structure with unsegmented
+                        bolo powers as a segmented radiation structure"""
+                    print(errStatement)
+                    sys.exit(1)
 
     def set_tokamak(self, Tokamak):
         self.tokamak = Tokamak
@@ -55,8 +81,12 @@ class RadDist(object):
         
         # JSON doesn't know how to deal with objects; just save names to
         # rebuild if necessary
+        if self.torSegmented:
+            properties.pop("tempObserverBin")
+        
         properties["tokamakName"] = self.tokamak.tokamakName
         properties.pop("tokamak")
+        properties.pop("torSegmented")
         
         return properties
     
@@ -76,9 +106,35 @@ class RadDist(object):
             pass
     
     def evaluate_first_punc(self, X,Y,Z):
+        # is the 0 in phi<0 here hardcoded to SPARC injector location? Probably.
+        # if we ever go to multiple injector Emis3D fitting, will need to adjust
+        if self.torSegmented:
+            r,phi = XY_To_RPhi(X,Y)
+            if(phi < 0):
+               phi =  phi + 2*np.pi
+            t = self.tempObserverBin
+            inc = np.pi/((self.numBins/2))
+            binPhi = inc * t
+            if(phi >= binPhi and phi < (binPhi + inc)):
+                return self.evaluate(X,Y,Z, EvalFirstPunc=1, EvalSecondPunc=0)
+            else:
+                return 0    
+        else:
             return self.evaluate(X,Y,Z, EvalFirstPunc=1, EvalSecondPunc=0)
     
     def evaluate_second_punc(self, X,Y,Z):
+        if self.torSegmented:
+            r,phi = XY_To_RPhi(X,Y)
+            if(phi < 0):
+              phi =  phi + 2*np.pi
+            t = self.tempObserverBin
+            inc = np.pi/((self.numBins/2))
+            binPhi = inc * t
+            if(phi >= binPhi and phi < (binPhi + inc)):
+                return self.evaluate(X,Y,Z, EvalFirstPunc=0, EvalSecondPunc=1)
+            else:
+                return 0
+        else:    
             return self.evaluate(X,Y,Z, EvalFirstPunc=0, EvalSecondPunc=1)
         
     def evaluate_both_punc(self, X,Y,Z):
@@ -109,7 +165,10 @@ class RadDist(object):
     def power_per_bin_calc(self, Errfrac = 0.01, Pointsupdate = int(1e5)):
         # Calculates total radiated power per solid angle emitted inside
         # a toroidal region with emissivity function from evaluate function
-    
+
+        # set random seed to always be the same so that the result is not different every run
+        random.seed(self.randSeed)
+
         # Various possible errors
         if (self.numPuncs != 1) and (self.numPuncs != 2):
             print("Radiation integration code is only designed for one or two\
@@ -275,7 +334,19 @@ class RadDist(object):
         runtime = time.time() - starttime
         print("integration runtime = " + str(math.ceil(runtime)) + " seconds")
         print("final error fraction = " + str(toterrfrac))
-        
+
+    def bin_sum(self, Variable_seg):
+        variable_save = []
+        for arrayIndex in range(len(Variable_seg)):
+            channel_sum = []
+            for channelIndex in range(len(Variable_seg[arrayIndex])):
+                sum = 0
+                for binIndex in range(len(Variable_seg[arrayIndex][channelIndex])):
+                    sum = sum + Variable_seg[arrayIndex][channelIndex][binIndex]
+                channel_sum.append(sum)
+            variable_save.append(channel_sum)
+        return variable_save
+
     def bolos_observe(self):
 
         if self.tokamak.mode != "Build":
@@ -283,10 +354,19 @@ class RadDist(object):
                   Either pass Tokamak = [a tokamak object with mode == 'Build'], or pass Tokamak = None and Mode = 'Build'\
                   to this RadDist")
             sys.exit(11)
+        
+        # set random seed to always be the same so that the result is not different every run
+        # doesn't seem to work though. some raysect developer comments on github suggest
+        # this is a known issue...
+        # https://github.com/ray-project/ray/issues/10145
+        raysectseed(self.randSeed)
             
         boloCameras = self.tokamak.bolometers
         self.boloCameras_powers = []
         self.boloCameras_powers_2nd = []
+        if self.torSegmented:
+            self.bolo_powers_segmented = []
+            self.bolo_powers_segmented_2nd = []
         
         for array in boloCameras:
             for channel in array.bolometers:
@@ -306,54 +386,68 @@ class RadDist(object):
                         # number is reasonable.
                         foil.pixel_samples = 1000
         
-        # The following ines define an emitting volume that the RadDist will evaluate functions are embedded in.
+        # The following lines define an emitting volume that the RadDist evaluate functions are embedded in.
         # The parameters are set to encompass to entirety of the tokamak (this setup is for JET and smaller), and the -2.5 is to shift the
         # volume so that it is vertically centered at  z = 0.
         # the first line defines the shape, the second makes it an emitting volume, the third embeds it in the world of the tokamak in question
+        # whoops I've hardcoded upper and lower height bounds... oh well. Can adjust that if we ever 
+        # port this to a machine with larger than these. Use self.tokamak parameters probably
         emitter = Cylinder(radius=5, height=5, transform=translate(0, 0, -2.5))
         emitter.parent = self.tokamak.world
         
-        # Observe first punctures
-        emitter.material = VolumeTransform(RadiationFunction(\
-            self.evaluate_first_punc_cherab), emitter.transform.inverse())
-        arraynumber = 0
-        for array in boloCameras:
-            array_powers = []
-            print("Observing bolometer array #" + str(arraynumber))
-            arraynumber = arraynumber + 1
-            for channel in array.bolometers:
-                try:
-                    observeVal = channel.bolometer_camera.observe()
-                except:
-                    # this case is for the JET KB5H, 5V, and 1 bolometers which don't have the extra bolometer_camera layer
-                    observeVal = channel.observe()
-                if len(observeVal) == 1:
-                    observeVal = observeVal[0]
-                array_powers.append(observeVal)
-            self.boloCameras_powers.append(array_powers)
-        
-        # Observe second punctures
-        emitter.material = VolumeTransform(RadiationFunction(\
-            self.evaluate_second_punc_cherab), emitter.transform.inverse())
-        arraynumber = 0
-        for array in boloCameras:
-            array_powers = []
-            print("Observing bolometer array #" + str(arraynumber) + " second puncture")
-            arraynumber = arraynumber + 1
-            for channel in array.bolometers:
-                if self.distType == "Helical":
-                    try:
-                        observeVal = channel.bolometer_camera.observe()
-                    except:
-                    # this case is for the JET KB5H, 5V, and 1 bolometers which don't have the extra bolometer_camera layer
-                        observeVal = channel.observe()
-                    if len(observeVal) == 1:
-                        observeVal = observeVal[0]
+        def ObserveLoop(PunctureNum):
+            print("Observing puncture " + str(PunctureNum))
+            if PunctureNum==1:
+                emitter.material = VolumeTransform(RadiationFunction(\
+                    self.evaluate_first_punc_cherab), emitter.transform.inverse())
+            elif PunctureNum==2:
+                emitter.material = VolumeTransform(RadiationFunction(\
+                    self.evaluate_second_punc_cherab), emitter.transform.inverse())
+            powers_array = []
+            arraynumber = 0
+            for array in boloCameras:
+                channel_powers = []
+                print("Observing bolometer array #" + str(arraynumber))
+                for channel in array.bolometers:
+                    if self.torSegmented:
+                        # not adapted for JET in segmented setup. But JET doesn't have toroidal bolos, so moot
+                        bin_powers = []
+                        for i in range(self.numBins):
+                            self.tempObserverBin = i
+                            observeVal = channel.bolometer_camera.observe()
+                            if len(observeVal) == 1:
+                                observeVal = observeVal[0]
+                            bin_powers.append(observeVal)
+                        channel_powers.append(bin_powers)
+                    else:
+                        try:
+                            observeVal = channel.bolometer_camera.observe()
+                        except:
+                            # this case is for the JET KB5H, 5V, and 1 bolometers which don't have the extra bolometer_camera layer
+                            observeVal = channel.observe()
+                        if len(observeVal) == 1:
+                            observeVal = observeVal[0]
+                        channel_powers.append(observeVal)
+                arraynumber = arraynumber + 1
+                powers_array.append(channel_powers)
+
+            if PunctureNum==1:
+                if self.torSegmented:
+                    self.bolo_powers_segmented = powers_array
+                    self.boloCameras_powers = self.bin_sum(Variable_seg=self.bolo_powers_segmented)
                 else:
-                    observeVal = 0.0
-                array_powers.append(observeVal)
-            self.boloCameras_powers_2nd.append(array_powers)
-    
+                    self.boloCameras_powers = powers_array
+            elif PunctureNum==2:
+                if self.torSegmented:
+                    self.bolo_powers_segmented_2nd = powers_array
+                    self.boloCameras_powers_2nd = self.bin_sum(Variable_seg=self.bolo_powers_segmented_2nd)
+                else:
+                    self.boloCameras_powers_2nd = powers_array
+
+        ObserveLoop(PunctureNum=1)
+        if self.distType == "Helical":
+            ObserveLoop(PunctureNum=2)
+
     def plot_in_round_old(self, Title = "Radiation Distribution",\
                  FromWhite = False, Resolution = 60, Alpha = 0.05):
         # Makes a 3d plot of the RadDist. Does not include any toroidal distribution overlay.
@@ -447,7 +541,8 @@ class RadDist(object):
         return fig
     
     def plot_in_round(self, Title = None, ShowFirstWall=True,\
-                 FromWhite = False, Resolution = 10, Alpha = 0.1):
+                FromWhite = False, Resolution = 10, Alpha = 0.1,\
+                PlotSightlines=False, ColoredSightlines=False):
         
         # Makes a 3d plot of the RadDist. Does not include any toroidal distribution overlay.
         # Radiation magnitude is described by color. Very low value points are removed entirely,
@@ -497,8 +592,9 @@ class RadDist(object):
         # convert to RGB scale
         functionMax = np.max(functionVals)
         functionVals = [math.floor(255 * x / functionMax) for x in functionVals]
+        functionMax = np.max(functionVals)
         
-        # Delete points where radiated power is less than 1% of maximum
+        # # Delete points where radiated power is less than 1% of maximum
         negligible = np.argwhere(functionVals < (0.01 * functionMax))
         functionVals = np.delete(functionVals, negligible)
         plotZs = np.delete(plotZs, negligible)
@@ -514,7 +610,7 @@ class RadDist(object):
         ax.set_zlim3d(-plotlimit, plotlimit)
         
         # evaluate function scatter plot.
-        if FromWhite == True:
+        if FromWhite:
             ax.scatter(plotXs, plotYs, plotZs, c = plt.cm.Purples(functionVals),
                             alpha = Alpha)
         else:
@@ -574,6 +670,32 @@ class RadDist(object):
         ax.set_yticks([])
         ax.set_zticks([])
         """
+
+        if PlotSightlines:
+            # this option might only work for SPARC
+            bolometers = self.tokamak.bolometers
+
+            if ColoredSightlines:
+                boloPowersMax = np.max(self.boloCameras_powers)
+
+            for bolo_camera_indx in range(len(bolometers)):
+                bolo_camera = bolometers[bolo_camera_indx]
+                for bolo_channel_indx in range(len(bolo_camera.bolometers)):
+                    bolo_channel = bolo_camera.bolometers[bolo_channel_indx]
+                    for foil in bolo_channel.bolometer_camera:
+                        slit_centre = foil.slit.centre_point
+                        ax.plot(slit_centre[0], slit_centre[1], slit_centre[2], 'ko')
+                        origin, hit, _ = foil.trace_sightline()
+                        ax.plot(foil.centre_point[0], foil.centre_point[1], foil.centre_point[2], 'kx')
+                        if ColoredSightlines:
+                            colorNum =(self.boloCameras_powers[bolo_camera_indx][bolo_channel_indx]\
+                                    / boloPowersMax) * 5
+                            color = plt.cm.Greys(colorNum)
+                            if colorNum > 0.005:
+                                ax.plot([origin[0], hit[0]], [origin[1], hit[1]], [origin[2], hit[2]], c=color)
+                        else:
+                            color='k'
+                            ax.plot([origin[0], hit[0]], [origin[1], hit[1]], [origin[2], hit[2]], c=color)
         
         return fig
     
@@ -799,6 +921,12 @@ class RadDist(object):
                   Either pass Tokamak = [a tokamak object with mode == 'Build'], or pass Tokamak = None and Mode = 'Build'\
                   to this RadDist")
             sys.exit(11)
+
+        # set random seed to always be the same so that the result is not different every run
+        # doesn't seem to work though. some raysect developer comments on github suggest
+        # this is a known issue...
+        # https://github.com/ray-project/ray/issues/10145
+        raysectseed(self.randSeed)
             
         tempworld = deepcopy(self.tokamak.world)
         sensor = Synth_Brightness_Observer(World=tempworld,\
@@ -842,11 +970,11 @@ class Toroidal(RadDist):
     def __init__(self, NumBins = 18, Tokamak = None,\
                  Mode = "Analysis", LoadFileName = None,\
                  StartR = None, StartZ = 0.0, PolSigma = 0.15,\
-                 SaveFileFolder=None):
+                 SaveFileFolder=None, TorSegmented=False):
         super(Toroidal, self).__init__(NumBins = NumBins,\
                  NumPuncs = 1, Tokamak = Tokamak,\
                  Mode = Mode, LoadFileName = LoadFileName,\
-                 SaveFileFolder=SaveFileFolder)
+                 SaveFileFolder=SaveFileFolder, TorSegmented=TorSegmented)
         if LoadFileName == None:
             if StartR == None:
                 self.startR = self.tokamak.majorRadius
@@ -908,11 +1036,11 @@ class ElongatedRing(RadDist):
     def __init__(self, NumBins = 18, Tokamak = None,\
                  Mode = "Analysis", LoadFileName = None,\
                  StartR = None, StartZ = 0.0, PolSigma = 0.15,\
-                 Elongation=1.0, SaveFileFolder=None):
+                 Elongation=1.0, SaveFileFolder=None, TorSegmented=False):
         super(ElongatedRing, self).__init__(NumBins = NumBins,\
                  NumPuncs = 1, Tokamak = Tokamak,\
                  Mode = Mode, LoadFileName = LoadFileName,\
-                 SaveFileFolder=SaveFileFolder)
+                 SaveFileFolder=SaveFileFolder, TorSegmented=TorSegmented)
         if LoadFileName == None:
             if StartR == None:
                 self.startR = self.tokamak.majorRadius
@@ -977,11 +1105,11 @@ class Helical(RadDist):
     def __init__(self, NumBins = 18, Tokamak = None,\
                  Mode = "Analysis", LoadFileName = None,\
                  StartR = 2.96, StartZ = 0.0, PolSigma = 0.15,\
-                 ShotNumber = None, Time=0, SaveFileFolder=None):
+                 ShotNumber = None, Time=0, SaveFileFolder=None, TorSegmented=False):
         super(Helical, self).__init__(NumBins = NumBins, NumPuncs = 2,\
                  Tokamak = Tokamak, Mode = Mode,\
                  LoadFileName = LoadFileName,\
-                 SaveFileFolder=SaveFileFolder)
+                 SaveFileFolder=SaveFileFolder, TorSegmented=TorSegmented)
     
         if LoadFileName == None:
             self.startR = StartR
@@ -1068,11 +1196,11 @@ class Sphere(RadDist):
     def __init__(self, NumBins = 18, Tokamak = None,\
                Mode = "Analysis", LoadFileName = None,\
                StartR = 1.2, StartZ = 0.0, Radius = .5,\
-               Phi = 0, SaveFileFolder=None):
+               Phi = 0, SaveFileFolder=None, TorSegmented=False):
         super(Sphere, self).__init__(NumBins = NumBins,\
              NumPuncs = 1, Tokamak = Tokamak,\
              Mode = Mode, LoadFileName = LoadFileName,\
-             SaveFileFolder=SaveFileFolder)
+             SaveFileFolder=SaveFileFolder, TorSegmented=TorSegmented)
         
         if LoadFileName == None:
             if StartR == None:

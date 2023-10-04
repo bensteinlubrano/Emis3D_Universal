@@ -117,7 +117,6 @@ class Emis3D_GUI(object):
                                              Message="Tokamak object could not be built")
                 return 1
             
-        
     def one_timestep(self, Tab):
         
         controlFrame = ttk.Frame(Tab)
@@ -224,33 +223,34 @@ class Emis3D_GUI(object):
         self.pvalMultEntry.grid(row=1, column=4, padx=30, pady=10)
         self.pvalMultEntry.insert(tk.END, '0.6827')
         
-        make_movie_prompt = ttk.Label(controlFrame2, text="Build Best Fits Movie")
-        make_movie_prompt.grid(row=0, column=0, padx=30, pady=10)
-        
-        self.makeMovieToggle = tk.Button(controlFrame2, text="No", width=12, relief="raised")
-        def movieToggle():
-            if self.makeMovieToggle.config('relief')[-1] == 'sunken':
-                self.makeMovieToggle.config(text="No")
-                self.makeMovieToggle.config(relief="raised")
-            else:
-                self.makeMovieToggle.config(text="Yes")
-                self.makeMovieToggle.config(relief="sunken")
-        self.makeMovieToggle.config(command=movieToggle)
-        self.makeMovieToggle.grid(row=1, column=0, padx=30, pady=10)
-        
-        make_crossSecs_prompt = ttk.Label(controlFrame2, text="Build Cross Sections\nMovie")
-        make_crossSecs_prompt.grid(row=0, column=1, padx=30, pady=5)
-        
-        self.makeCrossSecsToggle = tk.Button(controlFrame2, text="No", width=12, relief="raised")
-        def crossSecsToggle():
-            if self.makeCrossSecsToggle.config('relief')[-1] == 'sunken':
-                self.makeCrossSecsToggle.config(text="No")
-                self.makeCrossSecsToggle.config(relief="raised")
-            else:
-                self.makeCrossSecsToggle.config(text="Yes")
-                self.makeCrossSecsToggle.config(relief="sunken")
-        self.makeCrossSecsToggle.config(command=crossSecsToggle)
-        self.makeCrossSecsToggle.grid(row=1, column=1, padx=30, pady=10)
+        if self.comparingTo == "Experiment":
+            make_movie_prompt = ttk.Label(controlFrame2, text="Build Best Fits Movie")
+            make_movie_prompt.grid(row=0, column=0, padx=30, pady=10)
+            
+            self.makeMovieToggle = tk.Button(controlFrame2, text="No", width=12, relief="raised")
+            def movieToggle():
+                if self.makeMovieToggle.config('relief')[-1] == 'sunken':
+                    self.makeMovieToggle.config(text="No")
+                    self.makeMovieToggle.config(relief="raised")
+                else:
+                    self.makeMovieToggle.config(text="Yes")
+                    self.makeMovieToggle.config(relief="sunken")
+            self.makeMovieToggle.config(command=movieToggle)
+            self.makeMovieToggle.grid(row=1, column=0, padx=30, pady=10)
+            
+            make_crossSecs_prompt = ttk.Label(controlFrame2, text="Build Cross Sections\nMovie")
+            make_crossSecs_prompt.grid(row=0, column=1, padx=30, pady=5)
+            
+            self.makeCrossSecsToggle = tk.Button(controlFrame2, text="No", width=12, relief="raised")
+            def crossSecsToggle():
+                if self.makeCrossSecsToggle.config('relief')[-1] == 'sunken':
+                    self.makeCrossSecsToggle.config(text="No")
+                    self.makeCrossSecsToggle.config(relief="raised")
+                else:
+                    self.makeCrossSecsToggle.config(text="Yes")
+                    self.makeCrossSecsToggle.config(relief="sunken")
+            self.makeCrossSecsToggle.config(command=crossSecsToggle)
+            self.makeCrossSecsToggle.grid(row=1, column=1, padx=30, pady=10)
         
         move_peak_prompt = ttk.Label(controlFrame2, text="Allow Peak Movement")
         move_peak_prompt.grid(row=0, column=2, padx=30, pady=10)

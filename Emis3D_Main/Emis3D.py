@@ -6,6 +6,7 @@ Created on Mon Apr 10 15:55:26 2023
 @author: br0148
 """
 
+import sys
 from os import listdir, remove
 from os.path import dirname, realpath, isfile, join
         
@@ -25,10 +26,10 @@ from copy import copy
 
 class Emis3D(object):
     
-    def __init__(self):
+    def __init__(self, TorSegmented=False):
         
+        self.torSegmented=TorSegmented
         self.allRadDistsVec = []
-        
         self.tokamakAMode = None # Always loaded
         self.tokamakBMode = None # Not loaded unless necessary; time consuming
         self.load_tokamak(Mode="Analysis")
@@ -97,8 +98,8 @@ class Emis3D(object):
             channel_errs.append(np.array([0.1 * expMax] * len(bolo_exp[i])))
             
         for radDist in RadDistVec:
-            synth_powers_p1 = self.rearrange_powers_array(copy(radDist.boloCameras_powers))
-            synth_powers_p2 = self.rearrange_powers_array(copy(radDist.boloCameras_powers_2nd))
+            synth_powers_p1 = self.rearrange_powers_array(Powers=copy(radDist.boloCameras_powers))
+            synth_powers_p2 = self.rearrange_powers_array(Powers=copy(radDist.boloCameras_powers_2nd))
             
             # removes any negative numbers from experimental data for prescaling.
             # negative channels should really be removed in fitting also; on JET, channel 16
@@ -138,21 +139,108 @@ class Emis3D(object):
             pValList.append(RedChi2_To_Pvalue(chisq, degree_of_freedom))
         
         return chisqlist, pValList, fitsBoloFirsts, fitsBoloSeconds, channel_errs, preScales
+    
+    def calc_pvals_segmented(self, RadDistVec, BoloExpData, PowerUpperBound = 6000.0):
+        # only set up for SPARC, and the July 2023 Bolo configuration
+                
+        print("Calculating P-Values")
+        numChannels = self.tokamakAMode.numTorLocs\
+            * self.tokamakAMode.cameras_per_tor * self.tokamakAMode.channelsPerCamera
+
+        exp_powers_unsegmented = copy(BoloExpData)
+        maxExpPower = np.max(exp_powers_unsegmented)
+        minPowerCutoff = 0.0#0.01*maxExpPower
+        
+        chisqlist = []
+        pValList = []
+        fitsBoloFirsts = []
+        fitsBoloSeconds = []
+        preScales = []
+        channel_errs = []
+        
+        for radDist in RadDistVec:
+            if radDist.distType == "Helical":
+                errStatement = """Segmented operation not yet configured for radiation structures
+                    with more than one puncture"""
+                print(errStatement) 
+                sys.exit(1)
+
+            synth_powers_unsegmented = copy(radDist.boloCameras_powers)
+            synth_powers_segmented = copy(radDist.bolo_powers_segmented)
+            num_segments = len(synth_powers_segmented[0][0])
+
+            #Creates an array of angles which correspond to the center of each segment.
+            # first half are positive, second half are negative: goes from 0 to pi then
+            # -pi to 0. To match how the powers array indexing works
+            halfSegmentPhiWidth = np.pi/num_segments
+            segmentCenterPhis = np.linspace(halfSegmentPhiWidth, (2.0*np.pi) - halfSegmentPhiWidth, num_segments)
+            for phiIndx in range(len(segmentCenterPhis)):
+                if segmentCenterPhis[phiIndx] > np.pi:
+                    segmentCenterPhis[phiIndx] += - 2*np.pi
+
+            # uniformly pre-scales synthetic powers to same order of magnitude as experimental
+            # data, to put in range of fitting algorithm
+            preScaleFactorNum = np.sum(exp_powers_unsegmented)
+            preScaleFactorDenom = np.sum(synth_powers_unsegmented)
+            preScaleFactor = preScaleFactorNum / preScaleFactorDenom
+            #print("Pre Scale Factor = " + str(preScaleFactor))
+
+            numIgnoredChannels = 0
+            # this loop for counting the number of ignored channels for the purposes of the degree of freedom
+            # and for uniformly rescaling the synthetic powers to start closer to the experimental values
+            for CameraIndx in range(len(exp_powers_unsegmented)):
+                for channelIndx in range(len(exp_powers_unsegmented[CameraIndx])):
+                    channelExpPower = exp_powers_unsegmented[CameraIndx][channelIndx] 
+                    if channelExpPower <= minPowerCutoff:
+                        numIgnoredChannels +=1
+                    for channelSegmentIndx in range(len(synth_powers_segmented[CameraIndx][channelIndx])):
+                        segmentSynthPower = synth_powers_segmented[CameraIndx][channelIndx][channelSegmentIndx]
+                        synth_powers_segmented[CameraIndx][channelIndx][channelSegmentIndx] = segmentSynthPower * preScaleFactor
+                    #print("Channel Exp Power = " + str(channelExpPower))
+                    #print("Channel Synth Power = " + str(channelSynthPower))            
+            
+            p0Firsts, p0Seconds, boundsFirsts, boundsSeconds, fittingFunc =\
+                self.fitting_func_setup_segmented(\
+                Bolo_exp_unsegmented=exp_powers_unsegmented, Synth_powers_segmented=synth_powers_segmented,\
+                PowerUpperBound=PowerUpperBound, MinPowerCutoff = minPowerCutoff,\
+                SegmentCenterPhis = segmentCenterPhis, MaxExpPower = maxExpPower)
+            
+            #starting_chi2 = fittingFunc([1.0, 1.0, 1.0])
+            #print("Starting chi2 = " + str(starting_chi2))
+            
+            res = minimize(fittingFunc, p0Firsts, bounds=boundsFirsts) # second punctures not yet involved
+            res.fun
+            fitsBoloFirsts.append(res.x[:self.numTorLocs])
+            fitsBoloSeconds.append(res.x[self.numTorLocs:])
+            preScales.append(preScaleFactor)
+            
+            degree_of_freedom = numChannels - (len(p0Firsts) + 1) - numIgnoredChannels
+            chisq = (res.fun)/degree_of_freedom
+            chisqlist.append(chisq)
+            pValList.append(RedChi2_To_Pvalue(chisq, degree_of_freedom))
+        
+        #print(chisqlist)
+        return chisqlist, pValList, fitsBoloFirsts, fitsBoloSeconds, channel_errs, preScales
             
     def calc_fits(self, Etime, ErrorPool = False, PvalCutoff = None):
         # calculates reduced chi^2 values for radiation structure library for one timestep
-        
+
         if len(self.allRadDistsVec) == 0:
             self.load_raddists(TokamakName = self.tokamakAMode.tokamakName)
-        
+
         if self.comparingTo == "Experiment":
             boloExpData = self.load_bolo_exp_timestep(EvalTime = Etime)
         elif self.comparingTo == "Simulation":
             boloExpData = self.load_radDist_as_exp()[Etime]
         
-        self.chisqVec, self.pvalVec, self.fitsBoloFirsts, self.fitsBoloSeconds,\
-            self.channel_errs, self.preScaleVec =\
-            self.calc_pvals(self.allRadDistsVec, BoloExpData = boloExpData)
+        if self.torSegmented:
+            self.chisqVec, self.pvalVec, self.fitsBoloFirsts, self.fitsBoloSeconds,\
+                self.channel_errs, self.preScaleVec =\
+                self.calc_pvals_segmented(self.allRadDistsVec, BoloExpData = boloExpData)
+        else:
+            self.chisqVec, self.pvalVec, self.fitsBoloFirsts, self.fitsBoloSeconds,\
+                self.channel_errs, self.preScaleVec =\
+                self.calc_pvals(self.allRadDistsVec, BoloExpData = boloExpData)
         
         # take minimum pval RadDist, which is the closest fit
         if min(self.pvalVec) == 1.0: # covers case where Pvals bottom out (no pval better than 3). Not Ideal.
@@ -167,6 +255,10 @@ class Emis3D(object):
         print("best fit chi2 at this timestep is " + str(self.minchisq))
         self.minpval = self.pvalVec[self.minInd]
         self.minRadDist = self.allRadDistsVec[self.minInd]
+        if self.torSegmented:
+            print("best fit radDist at this timestep is toroidal z=" + str(self.minRadDist.startZ)\
+                + ", r=" + str(self.minRadDist.startR)\
+                + ", polsigma=" + str(self.minRadDist.polSigma))
         
         if ErrorPool:
             self.errorDists=[]
@@ -235,7 +327,10 @@ class Emis3D(object):
     def fit_asym_gaussian(self, PhiCoords = np.array([-2.0, -1.0, 1.0, 2.0]),\
                                FitYVals = np.array([3.0, 4.0, 3.0, 0.01]),\
                                ParametersGuess = np.array([1.0, 1.0, 2.2, np.nan]),\
-                               MovePeak = False, PlotFit = False, MaxIters=800):
+                               MovePeak = False, PlotFit = False, MaxIters=800,\
+                                JetPaperPlot=False):
+        # for JetPaperPlot: PhiCoords = np.array([-3.0*np.pi/2.0, -3.0*np.pi/4.0, np.pi/2.0, 5.0*np.pi/4.0])
+        # for JetPaperPlot: FitYVals = np.array([3.0, 4.0, 1.0, 0.01])
 
         if not MovePeak:
             parametersGuess = ParametersGuess[0:3]
@@ -260,17 +355,26 @@ class Emis3D(object):
                 parameters[0], parameters[1], parameters[2], parameters[3]
         
         if PlotFit:
+            plt.figure(figsize=(4.5,3.0))
             xvalues = np.linspace(-2.0 * math.pi, 2.0 * math.pi, 100)
             yvalues = self.asymmetric_gaussian_arr(Phi=xvalues, SigmaLeft = sigmaLeft,\
                 SigmaRight = sigmaRight, Amplitude = amplitude, Mu=mu)
-            
-            xaxisLabel = "Toroidal Angle"
-            yaxisLabel = "Radiated Power"
-            plt.scatter(PhiCoords, FitYVals, label = "Puncture Values")
-            plt.plot(xvalues, yvalues, 'r', label = "Asymmetric Gaussian Fit");
+            xaxisLabel = r'$\phi$ Toroidal [rad]'
+            yaxisLabel = "Radiation Structure\nAmplitude"
             plt.xlabel(xaxisLabel)
             plt.ylabel(yaxisLabel)
-            plt.legend()
+            if JetPaperPlot:
+                plt.scatter(PhiCoords[2], FitYVals[2], color='dodgerblue', label = "Vert. Array Puncture 1")
+                plt.scatter(PhiCoords[0], FitYVals[0], color='dodgerblue', marker='^', label = "Vert. Array Puncture 2")
+                plt.plot(xvalues, yvalues, color='orange', label = "Asymmetric Gaussian Fit")
+                plt.scatter(PhiCoords[1], FitYVals[1], color='limegreen', label = "Hor. Array Puncture 1")
+                plt.scatter(PhiCoords[3], FitYVals[3], color='limegreen', marker='^', label = "Hor. Array Puncture 2")
+                plt.legend(ncol=2, loc='upper center', bbox_to_anchor=(0.42, -0.3))
+                plt.tight_layout()
+            else:
+                plt.scatter(PhiCoords, FitYVals, label = "Puncture Values")
+                plt.plot(xvalues, yvalues, color='orange', label = "Asymmetric Gaussian Fit")
+                plt.legend()
             plt.show()
             
         return sigmaLeft, sigmaRight, amplitude, mu
