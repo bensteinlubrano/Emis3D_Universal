@@ -159,67 +159,120 @@ class Emis3D(object):
         channel_errs = []
         
         for radDist in RadDistVec:
-            if radDist.distType == "Helical":
-                errStatement = """Segmented operation not yet configured for radiation structures
-                    with more than one puncture"""
-                print(errStatement) 
-                sys.exit(1)
+            if radDist.distType == "Helical" or radDist.distType == "ElongatedHelical":
 
-            synth_powers_unsegmented = copy(radDist.boloCameras_powers)
-            synth_powers_segmented = copy(radDist.bolo_powers_segmented)
-            num_segments = len(synth_powers_segmented[0][0])
+                synth_powers_unsegmented = copy(radDist.boloCameras_powers)
+                synth_powers_segmented = copy(radDist.bolo_powers_segmented)
+                synth_powers_segmented_2nd = copy(radDist.bolo_powers_segmented_2nd)
+                num_segments = len(synth_powers_segmented[0][0])
 
-            #Creates an array of angles which correspond to the center of each segment.
-            # first half are positive, second half are negative: goes from 0 to pi then
-            # -pi to 0. To match how the powers array indexing works
-            halfSegmentPhiWidth = np.pi/num_segments
-            segmentCenterPhis = np.linspace(halfSegmentPhiWidth, (2.0*np.pi) - halfSegmentPhiWidth, num_segments)
-            for phiIndx in range(len(segmentCenterPhis)):
-                if segmentCenterPhis[phiIndx] > np.pi:
-                    segmentCenterPhis[phiIndx] += - 2*np.pi
+                #Creates an array of angles which correspond to the center of each segment.
+                # first half are positive, second half are negative: goes from 0 to pi then
+                # -pi to 0. To match how the powers array indexing works. Then goes around a
+                # second time for second punctures.
+                halfSegmentPhiWidth = np.pi/num_segments
+                half_num_segments = int(num_segments/2)
+                segmentCenterPhis1 = np.linspace(halfSegmentPhiWidth, np.pi - halfSegmentPhiWidth, half_num_segments)
+                segmentCenterPhis2 = np.linspace(-np.pi + halfSegmentPhiWidth, -halfSegmentPhiWidth, half_num_segments)
+                segmentCenterPhis3 = np.linspace(-(2.0*np.pi) + halfSegmentPhiWidth, -np.pi -halfSegmentPhiWidth, half_num_segments)
+                segmentCenterPhis4 = np.linspace(np.pi + halfSegmentPhiWidth, (2.0*np.pi) - halfSegmentPhiWidth, half_num_segments)
+                segmentCenterPhis = np.concatenate((segmentCenterPhis1, segmentCenterPhis2, segmentCenterPhis3, segmentCenterPhis4))
 
-            # uniformly pre-scales synthetic powers to same order of magnitude as experimental
-            # data, to put in range of fitting algorithm
-            preScaleFactorNum = np.sum(exp_powers_unsegmented)
-            preScaleFactorDenom = np.sum(synth_powers_unsegmented)
-            preScaleFactor = preScaleFactorNum / preScaleFactorDenom
-            #print("Pre Scale Factor = " + str(preScaleFactor))
+                # uniformly pre-scales synthetic powers to same order of magnitude as experimental
+                # data, to put in range of fitting algorithm
+                preScaleFactorNum = np.sum(exp_powers_unsegmented)
+                preScaleFactorDenom = np.sum(synth_powers_unsegmented)
+                preScaleFactor = preScaleFactorNum / preScaleFactorDenom
 
-            numIgnoredChannels = 0
-            # this loop for counting the number of ignored channels for the purposes of the degree of freedom
-            # and for uniformly rescaling the synthetic powers to start closer to the experimental values
-            for CameraIndx in range(len(exp_powers_unsegmented)):
-                for channelIndx in range(len(exp_powers_unsegmented[CameraIndx])):
-                    channelExpPower = exp_powers_unsegmented[CameraIndx][channelIndx] 
-                    if channelExpPower <= minPowerCutoff:
-                        numIgnoredChannels +=1
-                    for channelSegmentIndx in range(len(synth_powers_segmented[CameraIndx][channelIndx])):
-                        segmentSynthPower = synth_powers_segmented[CameraIndx][channelIndx][channelSegmentIndx]
-                        synth_powers_segmented[CameraIndx][channelIndx][channelSegmentIndx] = segmentSynthPower * preScaleFactor
-                    #print("Channel Exp Power = " + str(channelExpPower))
-                    #print("Channel Synth Power = " + str(channelSynthPower))            
-            
-            p0Firsts, p0Seconds, boundsFirsts, boundsSeconds, fittingFunc =\
-                self.fitting_func_setup_segmented(\
-                Bolo_exp_unsegmented=exp_powers_unsegmented, Synth_powers_segmented=synth_powers_segmented,\
-                PowerUpperBound=PowerUpperBound, MinPowerCutoff = minPowerCutoff,\
-                SegmentCenterPhis = segmentCenterPhis, MaxExpPower = maxExpPower)
-            
-            #starting_chi2 = fittingFunc([1.0, 1.0, 1.0])
-            #print("Starting chi2 = " + str(starting_chi2))
-            
-            res = minimize(fittingFunc, p0Firsts, bounds=boundsFirsts) # second punctures not yet involved
-            res.fun
-            fitsBoloFirsts.append(res.x[:self.numTorLocs])
-            fitsBoloSeconds.append(res.x[self.numTorLocs:])
-            preScales.append(preScaleFactor)
-            
-            degree_of_freedom = numChannels - (len(p0Firsts) + 1) - numIgnoredChannels
-            chisq = (res.fun)/degree_of_freedom
-            chisqlist.append(chisq)
-            pValList.append(RedChi2_To_Pvalue(chisq, degree_of_freedom))
+                numIgnoredChannels = 0
+                # this loop for counting the number of ignored channels for the purposes of the degree of freedom
+                # and for uniformly rescaling the synthetic powers to start closer to the experimental values
+                # currently, no channels are ignored
+                for CameraIndx in range(len(exp_powers_unsegmented)):
+                    for channelIndx in range(len(exp_powers_unsegmented[CameraIndx])):
+                        channelExpPower = exp_powers_unsegmented[CameraIndx][channelIndx] 
+                        if channelExpPower <= minPowerCutoff:
+                            numIgnoredChannels +=1
+                        for channelSegmentIndx in range(len(synth_powers_segmented[CameraIndx][channelIndx])):
+                            segmentSynthPower = synth_powers_segmented[CameraIndx][channelIndx][channelSegmentIndx]
+                            synth_powers_segmented[CameraIndx][channelIndx][channelSegmentIndx] = segmentSynthPower * preScaleFactor           
+                
+                p0Firsts, p0Seconds, boundsFirsts, boundsSeconds, fittingFunc =\
+                    self.fitting_func_setup_segmented_helical(\
+                    Bolo_exp_unsegmented=exp_powers_unsegmented, Synth_powers_segmented=synth_powers_segmented,\
+                    PowerUpperBound=PowerUpperBound, MinPowerCutoff = minPowerCutoff,\
+                    SegmentCenterPhis = segmentCenterPhis, MaxExpPower = maxExpPower, NumPuncs=2,\
+                    Synth_powers_segmented_2nd = synth_powers_segmented_2nd)
+                
+                res = minimize(fittingFunc, p0Firsts, bounds=boundsFirsts)
+                res.fun
+                fitsBoloFirsts.append(res.x[:self.numTorLocs])
+                fitsBoloSeconds.append(res.x[self.numTorLocs:])
+                preScales.append(preScaleFactor)
+                
+                degree_of_freedom = numChannels - (len(p0Firsts) + 1) - numIgnoredChannels
+                chisq = (res.fun)/degree_of_freedom
+                chisqlist.append(chisq)
+                pValList.append(RedChi2_To_Pvalue(chisq, degree_of_freedom))
+
+            else:
+                synth_powers_unsegmented = copy(radDist.boloCameras_powers)
+                synth_powers_segmented = copy(radDist.bolo_powers_segmented)
+                num_segments = len(synth_powers_segmented[0][0])
+
+                #Creates an array of angles which correspond to the center of each segment.
+                # first half are positive, second half are negative: goes from 0 to pi then
+                # -pi to 0. To match how the powers array indexing works
+                halfSegmentPhiWidth = np.pi/num_segments
+                segmentCenterPhis = np.linspace(halfSegmentPhiWidth, (2.0*np.pi) - halfSegmentPhiWidth, num_segments)
+                for phiIndx in range(len(segmentCenterPhis)):
+                    if segmentCenterPhis[phiIndx] > np.pi:
+                        segmentCenterPhis[phiIndx] += - 2*np.pi
+
+                # uniformly pre-scales synthetic powers to same order of magnitude as experimental
+                # data, to put in range of fitting algorithm
+                preScaleFactorNum = np.sum(exp_powers_unsegmented)
+                preScaleFactorDenom = np.sum(synth_powers_unsegmented)
+                preScaleFactor = preScaleFactorNum / preScaleFactorDenom
+                #print("Pre Scale Factor = " + str(preScaleFactor))
+
+                numIgnoredChannels = 0
+                # this loop for counting the number of ignored channels for the purposes of the degree of freedom
+                # and for uniformly rescaling the synthetic powers to start closer to the experimental values
+                # currently, no channels are ignored
+                for CameraIndx in range(len(exp_powers_unsegmented)):
+                    for channelIndx in range(len(exp_powers_unsegmented[CameraIndx])):
+                        channelExpPower = exp_powers_unsegmented[CameraIndx][channelIndx] 
+                        if channelExpPower <= minPowerCutoff:
+                            numIgnoredChannels +=1
+                        for channelSegmentIndx in range(len(synth_powers_segmented[CameraIndx][channelIndx])):
+                            segmentSynthPower = synth_powers_segmented[CameraIndx][channelIndx][channelSegmentIndx]
+                            synth_powers_segmented[CameraIndx][channelIndx][channelSegmentIndx] = segmentSynthPower * preScaleFactor           
+                
+                if radDist.distType in ["ReflectedToroidal", "TiltedReflectedToroidal"]:
+                    p0Firsts, p0Seconds, boundsFirsts, boundsSeconds, fittingFunc =\
+                        self.fitting_func_setup_segmented_reflectedtor(\
+                        Bolo_exp_unsegmented=exp_powers_unsegmented, Synth_powers_segmented=synth_powers_segmented,\
+                        PowerUpperBound=PowerUpperBound, MinPowerCutoff = minPowerCutoff,\
+                        SegmentCenterPhis = segmentCenterPhis, MaxExpPower = maxExpPower)
+                else:
+                    p0Firsts, p0Seconds, boundsFirsts, boundsSeconds, fittingFunc =\
+                        self.fitting_func_setup_segmented(\
+                        Bolo_exp_unsegmented=exp_powers_unsegmented, Synth_powers_segmented=synth_powers_segmented,\
+                        PowerUpperBound=PowerUpperBound, MinPowerCutoff = minPowerCutoff,\
+                        SegmentCenterPhis = segmentCenterPhis, MaxExpPower = maxExpPower)
+                
+                res = minimize(fittingFunc, p0Firsts, bounds=boundsFirsts) # second punctures not yet involved
+                res.fun
+                fitsBoloFirsts.append(res.x[:self.numTorLocs])
+                fitsBoloSeconds.append(res.x[self.numTorLocs:])
+                preScales.append(preScaleFactor)
+                
+                degree_of_freedom = numChannels - (len(p0Firsts) + 1) - numIgnoredChannels
+                chisq = (res.fun)/degree_of_freedom
+                chisqlist.append(chisq)
+                pValList.append(RedChi2_To_Pvalue(chisq, degree_of_freedom))
         
-        #print(chisqlist)
         return chisqlist, pValList, fitsBoloFirsts, fitsBoloSeconds, channel_errs, preScales
             
     def calc_fits(self, Etime, ErrorPool = False, PvalCutoff = None):
@@ -320,6 +373,116 @@ class Emis3D(object):
                         Amplitude=Amplitude, OffsetVert=0.0)
             else:
                 yval=self.gaussian_no_coeff(Phi=Phi, Sigma=SigmaRight, Mu=mu,\
+                        Amplitude=Amplitude, OffsetVert=0.0)   
+        
+        return yval
+
+    def cosine_tordist_1pi_arr(self, Phi, BaselineAmplitude, CosineAmpFrac, Mu=None):  
+        # Returns a cosine distribution from mu-pi to mu+pi. Implemented to handle arrays
+
+        if hasattr(Mu, "__len__"): # check if Mu is array-like
+            mu=Mu
+        elif Mu==None:
+            mu = self.tokamakAMode.injectionPhiTor
+        else:
+            mu=Mu
+        
+        if hasattr(Phi, "__len__"): # check if Phi is array-like
+            yvals = []
+            for phi in Phi:
+                if abs(phi - mu) > math.pi: # make sure cosine goes from mu-pi to mu+pi
+                    yval = 0.0
+            else:
+                yval = BaselineAmplitude * (1 + (CosineAmpFrac * math.cos((phi - mu))))
+            
+            yvals.append(yval)
+        else:
+            phi = Phi
+            if abs(phi - mu) > math.pi: # make sure cosine goes from mu-pi to mu+pi
+                yvals = 0.0
+            else:
+                yvals = BaselineAmplitude * (1 + (CosineAmpFrac * math.cos((phi - mu))))
+        
+        return yvals
+    
+    def cosine_tordist_2pi_arr(self, Phi, BaselineAmplitude, CosineAmpFrac, Mu=None):  
+        # Returns a cosine distribution from mu-pi to mu+pi. Implemented to handle arrays
+
+        if hasattr(Mu, "__len__"): # check if Mu is array-like
+            mu=Mu
+        elif Mu==None:
+            mu = self.tokamakAMode.injectionPhiTor
+        else:
+            mu=Mu
+        
+        if hasattr(Phi, "__len__"): # check if Phi is array-like
+            yvals = []
+            for phi in Phi:
+                if abs(phi - mu) > math.pi: # make sure cosine goes from mu-pi to mu+pi
+                    if (phi - mu) > math.pi:
+                        phi = phi - (2.0*math.pi)
+                    else:
+                        phi = phi + (2.0*math.pi)
+
+            yval = BaselineAmplitude * (1 + (CosineAmpFrac * math.cos((phi - mu))))
+            yvals.append(yval)
+        else:
+            phi = Phi
+            if abs(phi - mu) > math.pi: # make sure cosine goes from mu-pi to mu+pi
+                if (phi - mu) > math.pi:
+                    phi = phi - (2.0*math.pi)
+                else:
+                    phi = phi + (2.0*math.pi)
+
+            yvals = BaselineAmplitude * (1 + (CosineAmpFrac * math.cos((phi - mu))))
+        
+        return yvals
+
+    def triple_asymmetric_gaussian_tordist_arr(self, Phi, SigmaLeft, SigmaRight, Amplitude, Mu=None):
+        # Returns three asymmetric gaussians spaced by 120 degrees.
+        # Used to model the "resonant" 6-injector mitigation case, in conjunction with
+        # ReflectedToroidal radiation structures.
+        # Implemented to handle arrays, since the curve_fit function seems to need that
+
+        if hasattr(Mu, "__len__"):
+            mu=Mu
+        elif Mu==None:
+            mu = self.tokamakAMode.injectionPhiTor
+        else:
+            mu=Mu
+        
+        if hasattr(Phi, "__len__"): # check if Phi is array-like
+            yval = []
+            
+            for phi in Phi:
+                # shift phi to between mu - (math.pi/3.0) and mu + (math.pi/3.0)
+                while phi > (mu + (math.pi/3.0)):
+                    phi = phi - (2.0 * math.pi/3.0)
+
+                while phi < (mu - (math.pi/3.0)):
+                    phi = phi + (2.0 * math.pi/3.0)
+
+                if phi < mu:
+                    yval.append(self.gaussian_no_coeff(Phi=phi, Sigma=SigmaLeft, Mu=mu,\
+                            Amplitude=Amplitude, OffsetVert=0.0))
+                else:
+                    yval.append(self.gaussian_no_coeff(Phi=phi, Sigma=SigmaRight, Mu=mu,\
+                            Amplitude=Amplitude, OffsetVert=0.0))
+        else:
+            phi = Phi
+
+            # shift phi to between mu - (math.pi/3.0) and mu + (math.pi/3.0)
+            while phi > (mu + (math.pi/3.0)):
+                phi = phi - (2.0 * math.pi/3.0)
+
+            while phi < (mu - (math.pi/3.0)):
+                phi = phi + (2.0 * math.pi/3.0)
+
+            if phi < mu:
+                yval=self.gaussian_no_coeff(Phi=phi, Sigma=SigmaLeft, Mu=mu,\
+                        Amplitude=Amplitude, OffsetVert=0.0)
+            else:
+                yval=self.gaussian_no_coeff(Phi=phi, Sigma=SigmaRight, Mu=mu,\
                         Amplitude=Amplitude, OffsetVert=0.0)   
         
         return yval

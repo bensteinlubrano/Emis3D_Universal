@@ -445,7 +445,7 @@ class RadDist(object):
                     self.boloCameras_powers_2nd = powers_array
 
         ObserveLoop(PunctureNum=1)
-        if self.distType == "Helical":
+        if (self.distType == "Helical") or (self.distType == "ElongatedHelical"):
             ObserveLoop(PunctureNum=2)
 
     def plot_in_round_old(self, Title = "Radiation Distribution",\
@@ -542,7 +542,7 @@ class RadDist(object):
     
     def plot_in_round(self, Title = None, ShowFirstWall=True,\
                 FromWhite = False, Resolution = 10, Alpha = 0.1,\
-                PlotSightlines=False, ColoredSightlines=False):
+                PlotSightlines=False, ColoredSightlines=False, RemoveZeroSightlines=True):
         
         # Makes a 3d plot of the RadDist. Does not include any toroidal distribution overlay.
         # Radiation magnitude is described by color. Very low value points are removed entirely,
@@ -691,7 +691,10 @@ class RadDist(object):
                             colorNum =(self.boloCameras_powers[bolo_camera_indx][bolo_channel_indx]\
                                     / boloPowersMax) * 5
                             color = plt.cm.Greys(colorNum)
-                            if colorNum > 0.005:
+                            if RemoveZeroSightlines:
+                                if colorNum > 0.005:
+                                    ax.plot([origin[0], hit[0]], [origin[1], hit[1]], [origin[2], hit[2]], c=color)
+                            else:
                                 ax.plot([origin[0], hit[0]], [origin[1], hit[1]], [origin[2], hit[2]], c=color)
                         else:
                             color='k'
@@ -765,11 +768,12 @@ class RadDist(object):
                             functionVals.append(functionVal)
         
         # convert to RGB scale
-        functionMax = np.max(functionVals)
+        functionMax = np.max(functionVals) * 1e-1
         functionVals = [math.floor(255 * x / functionMax) for x in functionVals]
-        
+
         # Delete points where radiated power is less than 1% of maximum
-        negligible = np.argwhere(functionVals < (0.01 * functionMax))
+        #negligible = np.argwhere(functionVals < (0.01 * functionMax))
+        negligible = np.argwhere(functionVals < np.float64(0.01*255.0))
         functionVals = np.delete(functionVals, negligible) 
         plotRs = np.delete(plotRs, negligible)
         plotPhis = np.delete(plotPhis, negligible)
@@ -1030,6 +1034,175 @@ class Toroidal(RadDist):
         with open(saveFileName, 'w') as save_file:
              save_file.write(json.dumps(properties))
              
+class ReflectedToroidal(RadDist):
+    # this class has a gaussian distribution about a flat toroidal ring
+    # plus a reflection of that gaussian over the xy plane
+    def __init__(self, NumBins = 18, Tokamak = None,\
+                 Mode = "Analysis", LoadFileName = None,\
+                 StartR = None, StartZ = 0.0, PolSigma = 0.15,\
+                 SaveFileFolder=None, TorSegmented=False):
+        super(ReflectedToroidal, self).__init__(NumBins = NumBins,\
+                 NumPuncs = 1, Tokamak = Tokamak,\
+                 Mode = Mode, LoadFileName = LoadFileName,\
+                 SaveFileFolder=SaveFileFolder, TorSegmented=TorSegmented)
+        if LoadFileName == None:
+            if StartR == None:
+                self.startR = self.tokamak.majorRadius
+            else:
+                self.startR = StartR
+            self.startZ = StartZ
+            self.polSigma = PolSigma
+        else:
+            with open(LoadFileName) as file:
+                properties = json.load(file)
+            self.startR = properties["startR"]
+            self.startZ = properties["startZ"]
+            self.polSigma = properties["polSigma"]
+        
+        self.distType = "ReflectedToroidal"
+        
+        if Mode == "Build":
+            self.make_build_mode()
+        
+    def make_build_mode(self):
+        # toroidals need no additions for build mode
+        pass
+        
+    def evaluate(self, x,y,z, EvalFirstPunc, EvalSecondPunc):
+        
+        # first we need to convert from x,y,z to R,Z,phi
+        Z = z
+        R, phi0 = XY_To_RPhi(x,y)
+        
+        if EvalFirstPunc:
+            # bivariate normal distribution in poloidal plane. 
+            # integrated over dR and dZ this function returns 1. 
+            localEmis1 = (1 / (2 * np.pi * self.polSigma**2)
+                * math.exp(-0.5 * ((R - self.startR)**2 + (Z - self.startZ)**2) / self.polSigma**2))
+            
+            # add a second gaussian spot refected about xy plane
+            localEmis2 = (1 / (2 * np.pi * self.polSigma**2)
+                * math.exp(-0.5 * ((R - self.startR)**2 + (Z + self.startZ)**2) / self.polSigma**2))
+
+            localEmis = localEmis1 + localEmis2
+            return localEmis
+            
+        if EvalSecondPunc:
+            
+            return 0.0
+        
+    def save_RadDist(self, RoundDec = 2):
+        #[saves radiation distribution to a file]
+        
+        properties = self.__dict__
+        properties = self.prepare_for_JSON(properties)
+        
+        saveFileName = join(self.saveFileFolder,"reflectedtoroidal_pSig_") + str(round(self.polSigma, RoundDec)).replace('.', '_')\
+        + "_R_" + str(round(self.startR, RoundDec)).replace('.', '_')\
+        + "_Z_" + str(round(self.startZ, RoundDec)).replace('.', '_').replace('-', 'neg')\
+        + ".txt"
+          
+        with open(saveFileName, 'w') as save_file:
+             save_file.write(json.dumps(properties))
+
+class TiltedReflectedToroidal(RadDist):
+    # this class has a gaussian distribution about a flat toroidal ring
+    # plus a reflection of that gaussian over the xy plane
+    def __init__(self, NumBins = 18, Tokamak = None,\
+                 Mode = "Analysis", LoadFileName = None,\
+                 StartR = None, StartZ = 0.0, PolSigma = 0.15,\
+                 Elongation = 1.0,\
+                 SaveFileFolder=None, TorSegmented=False):
+        super(TiltedReflectedToroidal, self).__init__(NumBins = NumBins,\
+                 NumPuncs = 1, Tokamak = Tokamak,\
+                 Mode = Mode, LoadFileName = LoadFileName,\
+                 SaveFileFolder=SaveFileFolder, TorSegmented=TorSegmented)
+        if LoadFileName == None:
+            if StartR == None:
+                self.startR = self.tokamak.majorRadius
+            else:
+                self.startR = StartR
+            self.startZ = StartZ
+            self.polSigma = PolSigma
+            self.elongation = Elongation
+        else:
+            with open(LoadFileName) as file:
+                properties = json.load(file)
+            self.startR = properties["startR"]
+            self.startZ = properties["startZ"]
+            self.polSigma = properties["polSigma"]
+            self.elongation = properties["elongation"]
+        
+        self.distType = "TiltedReflectedToroidal"
+        
+        if Mode == "Build":
+            self.make_build_mode()
+        
+    def make_build_mode(self):
+        vertExtendParam = 3.0 # for vertical extension of plasma... hardcoded for now
+
+        # first we need to decompose (R,Z) in terms of parallel/perpendicular
+        # to tilt direction. Approximated as the perpendicular direction
+        # to the vector from (major radius, 0) to (startR, startZ)
+        # "cent0" = (major radius, 0), "cent1" = (startR, startZ), "point" = (R,Z)
+        cent0ToCent1Vec = [self.startR - self.tokamak.majorRadius,self.startZ]
+        cent0ToCent1Vec[1] = cent0ToCent1Vec[1] / vertExtendParam
+        cent0ToCent1VecMag = math.sqrt(cent0ToCent1Vec[0]**2 + cent0ToCent1Vec[1]**2)
+        self.cent0ToCent1VecNormed = [x/cent0ToCent1VecMag\
+                            for x in cent0ToCent1Vec]
+        self.perpVecNormed = [-self.cent0ToCent1VecNormed[1], self.cent0ToCent1VecNormed[0]]      
+        
+    def evaluate(self, x,y,z, EvalFirstPunc, EvalSecondPunc):
+        
+        # first we need to convert from x,y,z to R,Z,phi
+        Z = z
+        R, phi0 = XY_To_RPhi(x,y)
+        
+        if EvalFirstPunc:
+            # first (tilted) gaussian spot
+            cent1ToPointVec = [R - self.startR, Z - self.startZ]
+            paralleldist = cent1ToPointVec[0] * self.cent0ToCent1VecNormed[0] +\
+                cent1ToPointVec[1] * self.cent0ToCent1VecNormed[1]
+            perpdist = cent1ToPointVec[0] * self.perpVecNormed[0] +\
+                cent1ToPointVec[1] * self.perpVecNormed[1]
+            
+            localEmis1 = ((1.0 / (2.0 * np.pi * self.elongation * (self.polSigma**2)))\
+                * math.exp(-0.5 * (perpdist**2) / (self.polSigma*self.elongation)**2)\
+                * math.exp(-0.5 * (paralleldist**2) / self.polSigma**2))
+            
+            # second gaussian spot, reflected over xy plane
+            cent1ToPointVec = [R - self.startR, Z + self.startZ]
+            paralleldist = cent1ToPointVec[0] * self.cent0ToCent1VecNormed[0] +\
+                cent1ToPointVec[1] * (-1.0* self.cent0ToCent1VecNormed[1])
+            perpdist = cent1ToPointVec[0] * self.perpVecNormed[0] +\
+                cent1ToPointVec[1] * (-1.0 * self.perpVecNormed[1])
+            
+            localEmis2 = ((1.0 / (2.0 * np.pi * self.elongation * (self.polSigma**2)))\
+                * math.exp(-0.5 * (perpdist**2) / (self.polSigma*self.elongation)**2)\
+                * math.exp(-0.5 * (paralleldist**2) / self.polSigma**2))
+
+            localEmis = localEmis1 + localEmis2
+            return localEmis
+            
+        if EvalSecondPunc:
+            
+            return 0.0
+        
+    def save_RadDist(self, RoundDec = 2):
+        #[saves radiation distribution to a file]
+        
+        properties = self.__dict__
+        properties = self.prepare_for_JSON(properties)
+        
+        saveFileName = join(self.saveFileFolder,"tiltedreflectedtoroidal_pSig_") + str(round(self.polSigma, RoundDec)).replace('.', '_')\
+        + "_R_" + str(round(self.startR, RoundDec)).replace('.', '_')\
+        + "_Z_" + str(round(self.startZ, RoundDec)).replace('.', '_').replace('-', 'neg')\
+        + "_e_" + str(self.elongation).replace('.', '_')\
+        + ".txt"
+          
+        with open(saveFileName, 'w') as save_file:
+             save_file.write(json.dumps(properties))
+
 class ElongatedRing(RadDist):
     # this class has a bivariate gaussian distribution about a circle, with different
     # gaussian widths in r and z
@@ -1190,7 +1363,138 @@ class Helical(RadDist):
           
         with open(saveFileName, 'w') as save_file:
              save_file.write(json.dumps(properties))
-             
+
+class ElongatedHelical(RadDist):
+    # this class will have specifically helical radiation distributions
+    def __init__(self, NumBins = 18, Tokamak = None,\
+                 Mode = "Analysis", LoadFileName = None,\
+                 StartR = 2.96, StartZ = 0.0, PolSigma = 0.15,\
+                 Elongation=1.0,\
+                 ShotNumber = None, Time=0, SaveFileFolder=None, TorSegmented=False):
+        super(ElongatedHelical, self).__init__(NumBins = NumBins, NumPuncs = 2,\
+                 Tokamak = Tokamak, Mode = Mode,\
+                 LoadFileName = LoadFileName,\
+                 SaveFileFolder=SaveFileFolder, TorSegmented=TorSegmented)
+    
+        if LoadFileName == None:
+            self.startR = StartR
+            self.startZ = StartZ
+            self.shotnumber = ShotNumber
+            self.polSigma = PolSigma
+            self.time = Time
+            self.elongation = Elongation
+        else:
+            with open(LoadFileName) as file:
+                properties = json.load(file)
+            self.startR = properties["startR"]
+            self.startZ = properties["startZ"]
+            self.shotnumber = properties["shotnumber"]
+            self.polSigma = properties["polSigma"]
+            self.time = properties["time"]
+            self.elongation = properties["elongation"]
+            
+        self.distType = "ElongatedHelical"
+        
+        if Mode == "Build":
+            self.make_build_mode()
+            
+    def make_build_mode(self):
+        self.tokamak.set_fieldline(StartR = self.startR, StartZ = self.startZ,\
+            StartPhi = self.tokamak.injectionPhiTor, FlineShotNumber = self.shotnumber)
+    
+    def evaluate(self, x,y,z, EvalFirstPunc, EvalSecondPunc):
+        # Return the emissivity (W/m^3/rad) at the point (x,y,z) according to this
+        # instantiation of Emis3D. This function works only with scalar values of x, y and z.
+
+        # first we need to convert from x,y,z to R,Z,phi
+        Z = z
+        R, phi0 = XY_To_RPhi(x,y)
+        # readjust range of phi to center on injector location
+        if phi0 <= self.tokamak.injectionPhiTor - np.pi:
+            phi0 = phi0 + 2.*np.pi
+
+        localEmis0 = 0.0
+        localEmis1 = 0.0
+        vertExtendParam = 3.0 # for vertical extension of plasma... hardcoded for now
+        if EvalFirstPunc:
+            # next we need the R,Z position of our helical structure at this phi
+            flR, flZ = self.tokamak.find_RZ_Fline(Phi=phi0)
+
+            # now for bivariate normal distribution in poloidal plane. 
+            # elongated in approximate poloidal direction of field line
+
+            # first we need to decompose (R,Z) in terms of parallel/perpendicular
+            # to approximate field line. Approximated as the perpendicular direction
+            # to the vector from (major radius, 0) to (flR, flZ)
+            # "cent0" = (major radius, 0), "cent1" = (flR, flZ), "point" = (R,Z)
+            cent0ToCent1Vec = [flR - self.tokamak.majorRadius,flZ]
+            cent0ToCent1Vec[1] = cent0ToCent1Vec[1] / vertExtendParam
+            cent0ToCent1VecMag = math.sqrt(cent0ToCent1Vec[0]**2 + cent0ToCent1Vec[1]**2)
+            cent0ToCent1VecNormed = [x/cent0ToCent1VecMag\
+                              for x in cent0ToCent1Vec]
+            perpVecNormed = [-cent0ToCent1VecNormed[1], cent0ToCent1VecNormed[0]]
+            cent1ToPointVec = [R - flR, Z - flZ]
+            paralleldist = cent1ToPointVec[0] * cent0ToCent1VecNormed[0] +\
+                cent1ToPointVec[1] * cent0ToCent1VecNormed[1]
+            perpdist = cent1ToPointVec[0] * perpVecNormed[0] +\
+                cent1ToPointVec[1] * perpVecNormed[1]
+            
+            localEmis0 = ((1.0 / (2.0 * np.pi * self.elongation * (self.polSigma**2)))\
+                * math.exp(-0.5 * (perpdist**2) / (self.polSigma*self.elongation)**2)\
+                * math.exp(-0.5 * (paralleldist**2) / self.polSigma**2))
+
+        if EvalSecondPunc:
+            # this is the setup for 2 times around
+            if phi0 >= self.tokamak.injectionPhiTor:
+                phi1 = phi0 - 2.*np.pi
+            else:
+                phi1 = phi0 + 2.*np.pi   
+
+            # next we need the R,Z position of our helical structure at this phi
+            flR, flZ = self.tokamak.find_RZ_Fline(Phi=phi1)
+
+            # now for bivariate normal distribution in poloidal plane. 
+            # elongated in approximate poloidal direction of field line
+
+            # first we need to decompose (R,Z) in terms of parallel/perpendicular
+            # to approximate field line. Approximated as the perpendicular direction
+            # to the vector from (major radius, 0) to (flR, flZ)
+            # "cent0" = (major radius, 0), "cent1" = (flR, flZ), "point" = (R,Z)
+            cent0ToCent1Vec = [flR - self.tokamak.majorRadius,flZ]
+            cent0ToCent1Vec[1] = cent0ToCent1Vec[1] / vertExtendParam
+            cent0ToCent1VecMag = math.sqrt(cent0ToCent1Vec[0]**2 + cent0ToCent1Vec[1]**2)
+            cent0ToCent1VecNormed = [x/cent0ToCent1VecMag\
+                              for x in cent0ToCent1Vec]
+            perpVecNormed = [-cent0ToCent1VecNormed[1], cent0ToCent1VecNormed[0]]
+            cent1ToPointVec = [R - flR, Z - flZ]
+            paralleldist = cent1ToPointVec[0] * cent0ToCent1VecNormed[0] +\
+                cent1ToPointVec[1] * cent0ToCent1VecNormed[1]
+            perpdist = cent1ToPointVec[0] * perpVecNormed[0] +\
+                cent1ToPointVec[1] * perpVecNormed[1]
+            
+            localEmis1 = ((1.0 / (2.0 * np.pi * self.elongation * self.polSigma**2))\
+                * math.exp(-0.5 * (perpdist**2) / (self.polSigma*self.elongation)**2)\
+                * math.exp(-0.5 * (paralleldist**2) / self.polSigma**2))
+
+        return localEmis0 + localEmis1
+            
+    def save_RadDist(self, RoundDec = 2):
+        #[saves radiation distribution to a file]
+        
+        properties = self.__dict__.copy()
+        properties = self.prepare_for_JSON(properties)
+        
+        saveFileName = join(self.saveFileFolder ,"ehelical_shot_") + str(self.shotnumber)\
+        + "_pSig_" + str(round(self.polSigma, RoundDec)).replace('.', '_')\
+        + "_t_" + str(round(self.time, RoundDec)).replace('.', '_')\
+        + "_R_" + str(round(self.startR, RoundDec)).replace('.', '_')\
+        + "_Z_" + str(round(self.startZ, RoundDec)).replace('.', '_').replace('-', 'neg')\
+        + "_e_" + str(self.elongation).replace('.', '_')\
+        + ".txt"
+          
+        with open(saveFileName, 'w') as save_file:
+             save_file.write(json.dumps(properties))
+
 class Sphere(RadDist):
     # these structures are uniform spheres of emissivity
     def __init__(self, NumBins = 18, Tokamak = None,\
