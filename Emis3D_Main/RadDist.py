@@ -44,11 +44,19 @@ class RadDist(object):
             self.boloCameras_powers = []
             self.boloCameras_powers_2nd = []
 
+            # extras bolometers are bolos that are not used in the Emis3D fitting process, but their
+            # values at each timestep according to the best fit/close fit pool radiation structures
+            # are still recorded. E.g. the KB1s on JET
+            self.boloCameras_powers_extras = []
+            self.boloCameras_powers_extras_2nd = []
+
             if self.torSegmented:
                 # structure of segmented bolo powers lists is:
                 # cameras -> channels in each camera -> toroidal segments for each channel
                 self.bolo_powers_segmented = []
                 self.bolo_powers_segmented_2nd = []
+                self.bolo_powers_extras_segmented = []
+                self.bolo_powers_extras_segmented_2nd = []
 
                 # this is a bin index used in iterating over the bins to do a segmented
                 # observation. Necessary because the observe function takes functions of
@@ -61,11 +69,17 @@ class RadDist(object):
             self.numPuncs = properties["numPuncs"]
             self.boloCameras_powers = properties["boloCameras_powers"]
             self.boloCameras_powers_2nd = properties["boloCameras_powers_2nd"]
+            if "bolo_powers_extras" in properties:
+                self.bolo_powers_extras = properties["bolo_powers_extras"]
+                self.bolo_powers_extras_2nd = properties["bolo_powers_extras_2nd"]
             self.powerPerBin = properties["powerPerBin"]
             if self.torSegmented:
                 try:
                     self.bolo_powers_segmented = properties["bolo_powers_segmented"]
                     self.bolo_powers_segmented_2nd = properties["bolo_powers_segmented_2nd"]
+                    if "bolo_powers_extras_segmented" in properties:
+                        self.bolo_powers_extras_segmented = properties["bolo_powers_extras_segmented"]
+                        self.bolo_powers_extras_segmented_2nd = properties["bolo_powers_extras_segmented_2nd"]
 
                     self.tempObserverBin = None
                 except:
@@ -362,14 +376,19 @@ class RadDist(object):
         raysectseed(self.randSeed)
             
         boloCameras = self.tokamak.bolometers
+        boloExtras = self.tokamak.extrabolometers
         self.boloCameras_powers = []
         self.boloCameras_powers_2nd = []
+        self.boloCameras_powers_extras = []
+        self.boloCameras_powers_extras_2nd = []
         if self.torSegmented:
             self.bolo_powers_segmented = []
             self.bolo_powers_segmented_2nd = []
+            self.bolo_powers_extras_segmented = []
+            self.bolo_powers_extras_segmented_2nd = []
         
-        for array in boloCameras:
-            for channel in array.bolometers:
+        def assign_monte_carlo_iterations_loop(BolosList):
+            for channel in BolosList:
                 try:
                     for foil in list(channel.bolometer_camera.foil_detectors):
                         # the following line sets the number of rays to trace at once in parallel. Heimdall can apparently do 16.
@@ -385,6 +404,15 @@ class RadDist(object):
                         # The following line sets the resolution of the sightline area viewed by each bolometer. Jack Lovell says this
                         # number is reasonable.
                         foil.pixel_samples = 1000
+
+            return BolosList
+
+        for array in boloCameras:
+            array.bolometers = assign_monte_carlo_iterations_loop(BolosList=array.bolometers)
+
+        if len(boloExtras) > 0:
+            for array in boloExtras:
+                array.bolometers = assign_monte_carlo_iterations_loop(BolosList=array.bolometers)
         
         # The following lines define an emitting volume that the RadDist evaluate functions are embedded in.
         # The parameters are set to encompass to entirety of the tokamak (this setup is for JET and smaller), and the -2.5 is to shift the
@@ -394,8 +422,36 @@ class RadDist(object):
         # port this to a machine with larger than these. Use self.tokamak parameters probably
         emitter = Cylinder(radius=5, height=5, transform=translate(0, 0, -2.5))
         emitter.parent = self.tokamak.world
+
+        def arrayLoop(BolosArray, ArrayNumber, PowersArray):
+            channel_powers = []
+            print("Observing bolometer array #" + str(ArrayNumber))
+            for channel in BolosArray.bolometers:
+                if self.torSegmented:
+                    # not adapted for JET in segmented setup. But JET doesn't have toroidal bolos, so moot
+                    bin_powers = []
+                    for i in range(self.numBins):
+                        self.tempObserverBin = i
+                        observeVal = channel.bolometer_camera.observe()
+                        if len(observeVal) == 1:
+                            observeVal = observeVal[0]
+                        bin_powers.append(observeVal)
+                    channel_powers.append(bin_powers)
+                else:
+                    try:
+                        observeVal = channel.bolometer_camera.observe()
+                    except:
+                        # this case is for the JET KB5H, 5V, and 1 bolometers which don't have the extra bolometer_camera layer
+                        observeVal = channel.observe()
+                    if len(observeVal) == 1:
+                        observeVal = observeVal[0]
+                    channel_powers.append(observeVal)
+            arraynumber = ArrayNumber + 1
+            PowersArray.append(channel_powers)
+
+            return arraynumber, PowersArray
         
-        def ObserveLoop(PunctureNum):
+        def punctureLoop(PunctureNum):
             print("Observing puncture " + str(PunctureNum))
             if PunctureNum==1:
                 emitter.material = VolumeTransform(RadiationFunction(\
@@ -406,47 +462,43 @@ class RadDist(object):
             powers_array = []
             arraynumber = 0
             for array in boloCameras:
-                channel_powers = []
-                print("Observing bolometer array #" + str(arraynumber))
-                for channel in array.bolometers:
-                    if self.torSegmented:
-                        # not adapted for JET in segmented setup. But JET doesn't have toroidal bolos, so moot
-                        bin_powers = []
-                        for i in range(self.numBins):
-                            self.tempObserverBin = i
-                            observeVal = channel.bolometer_camera.observe()
-                            if len(observeVal) == 1:
-                                observeVal = observeVal[0]
-                            bin_powers.append(observeVal)
-                        channel_powers.append(bin_powers)
-                    else:
-                        try:
-                            observeVal = channel.bolometer_camera.observe()
-                        except:
-                            # this case is for the JET KB5H, 5V, and 1 bolometers which don't have the extra bolometer_camera layer
-                            observeVal = channel.observe()
-                        if len(observeVal) == 1:
-                            observeVal = observeVal[0]
-                        channel_powers.append(observeVal)
-                arraynumber = arraynumber + 1
-                powers_array.append(channel_powers)
+                arraynumber, powers_array = arrayLoop(\
+                    BolosArray=array, ArrayNumber=arraynumber, PowersArray=powers_array)
+
+            if len(boloExtras) > 0:
+                extras_powers_array = []
+                for array in boloExtras:
+                    arraynumber, extras_powers_array = arrayLoop(\
+                        BolosArray=array, ArrayNumber=arraynumber, PowersArray=extras_powers_array)
 
             if PunctureNum==1:
                 if self.torSegmented:
                     self.bolo_powers_segmented = powers_array
                     self.boloCameras_powers = self.bin_sum(Variable_seg=self.bolo_powers_segmented)
+
+                    if len(boloExtras) > 0:
+                        self.bolo_powers_extras_segmented = extras_powers_array
+                        self.boloCameras_powers_extras = self.bin_sum(Variable_seg=self.bolo_powers_extras_segmented)
                 else:
                     self.boloCameras_powers = powers_array
+                    if len(boloExtras) > 0:
+                        self.boloCameras_powers_extras = extras_powers_array
             elif PunctureNum==2:
                 if self.torSegmented:
                     self.bolo_powers_segmented_2nd = powers_array
                     self.boloCameras_powers_2nd = self.bin_sum(Variable_seg=self.bolo_powers_segmented_2nd)
+
+                    if len(boloExtras) > 0:
+                        self.bolo_powers_extras_segmented_2nd = extras_powers_array
+                        self.boloCameras_powers_extras_2nd = self.bin_sum(Variable_seg=self.bolo_powers_extras_segmented_2nd)
                 else:
                     self.boloCameras_powers_2nd = powers_array
+                    if len(boloExtras) > 0:
+                        self.boloCameras_powers_extras_2nd = extras_powers_array
 
-        ObserveLoop(PunctureNum=1)
+        punctureLoop(PunctureNum=1)
         if (self.distType == "Helical") or (self.distType == "ElongatedHelical"):
-            ObserveLoop(PunctureNum=2)
+            punctureLoop(PunctureNum=2)
 
     def plot_in_round_old(self, Title = "Radiation Distribution",\
                  FromWhite = False, Resolution = 60, Alpha = 0.05):
@@ -913,12 +965,12 @@ class RadDist(object):
     
     def observe_local_intensity(self, ApCenterPoint = [2.18, 0.68, 0.0],\
                                 FoilRotVec = [0.0, -np.pi/4.0, np.pi]):
-    # aperature center point is r,z,phi
-    # foil rotation vector is the direction the "foil" is pointing in,
-    # the normal vector to the surface where the intensity is observed.
-    # first angle is [about the foil?],
-    # second angle is angle in x-z plane starting from horizontal outwards,
-    # third angle is angle in x-y plane starting from outwards
+        # aperature center point is r,z,phi
+        # foil rotation vector is the direction the "foil" is pointing in,
+        # the normal vector to the surface where the intensity is observed.
+        # first angle is [about the foil?],
+        # second angle is angle in x-z plane starting from horizontal outwards,
+        # third angle is angle in x-y plane starting from outwards
 
         if self.tokamak.mode != "Build":
             print("The tokamak object of this RadDist is not in Build mode. To use this function,\

@@ -31,6 +31,8 @@ class Tokamak(object):
         self.torConventionPhi = torConventionPhis[TokamakName]
         self.wallfile = WallFile
         self.tokamakName = TokamakName
+        self.bolometers = []
+        self.extrabolometers = []
 
 # loads the first wall path from file
     def load_first_wall(self):
