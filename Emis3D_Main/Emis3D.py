@@ -53,6 +53,7 @@ class Emis3D(object):
         self.minPreScaleList = None
         self.minFitsFirsts = None
         self.minFitsSeconds = None
+        self.extrasPowers = None
         
     def load_raddists(self, TokamakName):
         
@@ -118,7 +119,8 @@ class Emis3D(object):
                 
             for i in range(self.numTorLocs):
                 synth_powers_p1[i] = np.array(synth_powers_p1[i]) * preScaleFactor
-                synth_powers_p2[i] = np.array(synth_powers_p2[i]) * preScaleFactor
+                if len(synth_powers_p2) > 0: # check if there's a second puncture
+                    synth_powers_p2[i] = np.array(synth_powers_p2[i]) * preScaleFactor
             
             p0Firsts, p0Seconds, boundsFirsts, boundsSeconds, fittingFunc =\
                 self.fitting_func_setup(Bolo_exp=bolo_exp, Synth_powers_p1=synth_powers_p1,\
@@ -552,7 +554,7 @@ class Emis3D(object):
         errorTpfs = []
         for distNum in range(len(self.errorDists)):
             try:
-                errorRadPower, errorTpf, errorToroidalFitCoeffs =\
+                errorRadPower, errorExtrasPowers, errorTpf, errorToroidalFitCoeffs =\
                     self.calc_rad_power(RadDist=self.errorDists[distNum], PreScale=self.errorPrescales[distNum],\
                         FitsFirsts=self.errorFitsFirsts[distNum], FitsSeconds=self.errorFitsSeconds[distNum],\
                         MovePeak=MovePeak)
@@ -582,6 +584,7 @@ class Emis3D(object):
         # information in the process, and error bound information if ErrorPool=True
         
         self.radPowers = []
+        self.extrasPowers = []
         self.tpfs = []
         self.minRadDistList = []
         self.minPreScaleList = []
@@ -618,12 +621,13 @@ class Emis3D(object):
             self.minchisqList.append(self.minchisq)
             self.minpvalList.append(self.minpval)
                 
-            radPower, tpf, torFitCoeffs =\
+            radPower, extrasPowers, tpf, torFitCoeffs =\
                 self.calc_rad_power(RadDist=self.minRadDist, PreScale=self.minPreScale,\
                         FitsFirsts=self.bestFitsBoloFirsts, FitsSeconds=self.bestFitsBoloSeconds,\
                         MovePeak=MovePeak)
                 
             self.radPowers.append(radPower)
+            self.extrasPowers.append(extrasPowers)
             self.tpfs.append(tpf)
             self.minTorFitCoeffs.append(torFitCoeffs)
                 
@@ -651,9 +655,13 @@ class Emis3D(object):
         
         # choose which variables to output to file, and what names they get in excel file
         vars_to_print = ["radPowerTimes", "minchisqList", "lowerBoundRadPowers", "radPowers",\
-                         "upperBoundRadPowers", "lowerBoundTpfs", "tpfs", "upperBoundTpfs"]
+                        "upperBoundRadPowers", "lowerBoundTpfs", "tpfs", "upperBoundTpfs",\
+                        "minRadDistList", "minRadDistList", "minRadDistList", "minRadDistList",\
+                        "minRadDistList"]
         excel_names = ["Time (s)", "Best Chisq", "Prad Lower (GW)", "Prad Best (GW)",\
-                       "Prad Upper (GW)", "TPF Lower", "TPF Best", "TPF Upper"]
+                        "Prad Upper (GW)", "TPF Lower", "TPF Best", "TPF Upper",\
+                        "Best Fit Type", "polSigma", "startR", "startZ",\
+                        "elongation"]
         
         # copy all attributes of Emis3D instance as dictionary
         varsDict = copy(vars(self))
@@ -665,6 +673,16 @@ class Emis3D(object):
             # also convert radiated powers from W to GW
             if name in ["Prad Lower (GW)", "Prad Best (GW)", "Prad Upper (GW)"]:
                 values = [x * 1e-9 for x in values]
+            elif name in ["Best Fit Type"]:
+                values = [x.distType for x in values]
+            elif name in ["polSigma", "startR", "startZ", "elongation"]:
+                newvalues = []
+                for x in values:
+                    if hasattr(x, name):
+                        newvalues.append(getattr(x, name))
+                    else:
+                        newvalues.append(None)
+                values = newvalues
             outputDict[name] = values
         
         # convert to pandas dataframe

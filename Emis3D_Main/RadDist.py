@@ -69,9 +69,9 @@ class RadDist(object):
             self.numPuncs = properties["numPuncs"]
             self.boloCameras_powers = properties["boloCameras_powers"]
             self.boloCameras_powers_2nd = properties["boloCameras_powers_2nd"]
-            if "bolo_powers_extras" in properties:
-                self.bolo_powers_extras = properties["bolo_powers_extras"]
-                self.bolo_powers_extras_2nd = properties["bolo_powers_extras_2nd"]
+            if "boloCameras_powers_extras" in properties:
+                self.boloCameras_powers_extras = properties["boloCameras_powers_extras"]
+                self.boloCameras_powers_extras_2nd = properties["boloCameras_powers_extras_2nd"]
             self.powerPerBin = properties["powerPerBin"]
             if self.torSegmented:
                 try:
