@@ -1421,7 +1421,7 @@ class ElongatedHelical(RadDist):
     def __init__(self, NumBins = 18, Tokamak = None,\
                  Mode = "Analysis", LoadFileName = None,\
                  StartR = 2.96, StartZ = 0.0, PolSigma = 0.15,\
-                 Elongation=1.0,\
+                 Elongation=1.0, Zoffset = 0.0,\
                  ShotNumber = None, Time=0, SaveFileFolder=None, TorSegmented=False):
         super(ElongatedHelical, self).__init__(NumBins = NumBins, NumPuncs = 2,\
                  Tokamak = Tokamak, Mode = Mode,\
@@ -1435,6 +1435,7 @@ class ElongatedHelical(RadDist):
             self.polSigma = PolSigma
             self.time = Time
             self.elongation = Elongation
+            self.zoffset = Zoffset
         else:
             with open(LoadFileName) as file:
                 properties = json.load(file)
@@ -1444,6 +1445,10 @@ class ElongatedHelical(RadDist):
             self.polSigma = properties["polSigma"]
             self.time = properties["time"]
             self.elongation = properties["elongation"]
+            if "zoffset" in properties:
+                self.zoffset = properties["zoffset"]
+            else:
+                self.zoffset = 0.0
             
         self.distType = "ElongatedHelical"
         
@@ -1477,9 +1482,9 @@ class ElongatedHelical(RadDist):
 
             # first we need to decompose (R,Z) in terms of parallel/perpendicular
             # to approximate field line. Approximated as the perpendicular direction
-            # to the vector from (major radius, 0) to (flR, flZ)
-            # "cent0" = (major radius, 0), "cent1" = (flR, flZ), "point" = (R,Z)
-            cent0ToCent1Vec = [flR - self.tokamak.majorRadius,flZ]
+            # to the vector from (major radius, zoffset) to (flR, flZ)
+            # "cent0" = (major radius, zoffset), "cent1" = (flR, flZ), "point" = (R,Z)
+            cent0ToCent1Vec = [flR - self.tokamak.majorRadius, flZ - self.zoffset]
             cent0ToCent1Vec[1] = cent0ToCent1Vec[1] / vertExtendParam
             cent0ToCent1VecMag = math.sqrt(cent0ToCent1Vec[0]**2 + cent0ToCent1Vec[1]**2)
             cent0ToCent1VecNormed = [x/cent0ToCent1VecMag\
@@ -1510,9 +1515,9 @@ class ElongatedHelical(RadDist):
 
             # first we need to decompose (R,Z) in terms of parallel/perpendicular
             # to approximate field line. Approximated as the perpendicular direction
-            # to the vector from (major radius, 0) to (flR, flZ)
-            # "cent0" = (major radius, 0), "cent1" = (flR, flZ), "point" = (R,Z)
-            cent0ToCent1Vec = [flR - self.tokamak.majorRadius,flZ]
+            # to the vector from (major radius, zoffset) to (flR, flZ)
+            # "cent0" = (major radius, zoffset), "cent1" = (flR, flZ), "point" = (R,Z)
+            cent0ToCent1Vec = [flR - self.tokamak.majorRadius, flZ - self.zoffset]
             cent0ToCent1Vec[1] = cent0ToCent1Vec[1] / vertExtendParam
             cent0ToCent1VecMag = math.sqrt(cent0ToCent1Vec[0]**2 + cent0ToCent1Vec[1]**2)
             cent0ToCent1VecNormed = [x/cent0ToCent1VecMag\
