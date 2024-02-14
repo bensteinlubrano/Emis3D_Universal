@@ -132,33 +132,40 @@ class Emis3D_GUI(object):
             self.shotnumberEntryOneTimestep = ttk.Entry(controlFrame)
             self.shotnumberEntryOneTimestep.grid(column=0, row=1, padx=30, pady=10)
             self.shotnumberEntryOneTimestep.insert(tk.END, '95709')
+
+            injector_prompt = ttk.Label(controlFrame, text="Enter Injector Number")
+            injector_prompt.grid(column=1, row=0, padx=30, pady=10)
+            
+            self.injectorEntryOneTimestep= ttk.Entry(controlFrame)
+            self.injectorEntryOneTimestep.grid(column=1, row=1, padx=30, pady=10)
+            self.injectorEntryOneTimestep.insert(tk.END, '1')
         
         etime_prompt = ttk.Label(controlFrame, text="Enter Evaluation Time")
-        etime_prompt.grid(column=1, row=0, padx=30, pady=10)
+        etime_prompt.grid(column=2, row=0, padx=30, pady=10)
         
         self.etimeEntry = ttk.Entry(controlFrame)
-        self.etimeEntry.grid(column=1, row=1, padx=30, pady=10)
+        self.etimeEntry.grid(column=2, row=1, padx=30, pady=10)
         if self.comparingTo == "Experiment":
             self.etimeEntry.insert(tk.END, '50.93')
         elif self.comparingTo == "Simulation":
             self.etimeEntry.insert(tk.END, '0')
         
         type1_prompt = ttk.Label(controlFrame, text="Enter RadDist Type 1")
-        type1_prompt.grid(column=2, row=0, padx=30, pady=10)
+        type1_prompt.grid(column=3, row=0, padx=30, pady=10)
         
         self.type1entry = ttk.Entry(controlFrame)
-        self.type1entry.grid(column=2, row=1, padx=30, pady=10)
+        self.type1entry.grid(column=3, row=1, padx=30, pady=10)
         self.type1entry.insert(tk.END, 'Helical')
         
         type2_prompt = ttk.Label(controlFrame, text="Enter RadDist Type 2")
-        type2_prompt.grid(column=3, row=0, padx=30, pady=10)
+        type2_prompt.grid(column=4, row=0, padx=30, pady=10)
         
         self.type2entry = ttk.Entry(controlFrame)
-        self.type2entry.grid(column=3, row=1, padx=30, pady=10)
+        self.type2entry.grid(column=4, row=1, padx=30, pady=10)
         self.type2entry.insert(tk.END, 'Toroidal')
         
         move_peak_prompt = ttk.Label(controlFrame, text="Allow Peak Movement")
-        move_peak_prompt.grid(row=0, column=4, padx=30, pady=10)
+        move_peak_prompt.grid(row=0, column=5, padx=30, pady=10)
         
         self.movePeakToggle1 = tk.Button(controlFrame, text="No", width=12, relief="raised")
         def peakToggle():
@@ -169,11 +176,11 @@ class Emis3D_GUI(object):
                 self.movePeakToggle1.config(text="Yes")
                 self.movePeakToggle1.config(relief="sunken")
         self.movePeakToggle1.config(command=peakToggle)
-        self.movePeakToggle1.grid(row=1, column=4, padx=30, pady=10)
+        self.movePeakToggle1.grid(row=1, column=5, padx=30, pady=10)
         
         buttonRefreshTimestep = ttk.Button(controlFrame, text='Enter',\
             command=lambda:self.refresh_timestep(Container=plotsFrame))
-        buttonRefreshTimestep.grid(column=5, row=1, ipadx=10, ipady=3)
+        buttonRefreshTimestep.grid(column=6, row=1, ipadx=10, ipady=3)
         
     def rad_power_overview(self, Tab):
         
@@ -215,12 +222,19 @@ class Emis3D_GUI(object):
             self.numTimesEntry = ttk.Entry(controlFrame)
             self.numTimesEntry.grid(row=1, column=3, padx=30, pady=10)
             self.numTimesEntry.insert(tk.END, '53')
+
+            injector_prompt = ttk.Label(controlFrame, text="Enter Injector Number")
+            injector_prompt.grid(column=4, row=0, padx=30, pady=10)
+            
+            self.injectorEntryRadPowerOverview = ttk.Entry(controlFrame)
+            self.injectorEntryRadPowerOverview.grid(column=4, row=1, padx=30, pady=10)
+            self.injectorEntryRadPowerOverview.insert(tk.END, '1')
         
         pval_mult_prompt = ttk.Label(controlFrame, text="Enter P Value")
-        pval_mult_prompt.grid(row=0, column=4, padx=30, pady=10)
+        pval_mult_prompt.grid(row=0, column=5, padx=30, pady=10)
         
         self.pvalMultEntry = ttk.Entry(controlFrame)
-        self.pvalMultEntry.grid(row=1, column=4, padx=30, pady=10)
+        self.pvalMultEntry.grid(row=1, column=5, padx=30, pady=10)
         self.pvalMultEntry.insert(tk.END, '0.6827')
         
         if self.comparingTo == "Experiment":
@@ -306,6 +320,7 @@ class Emis3D_GUI(object):
         self.multiShotStartTimes = []
         self.multiShotEndTimes = []
         self.multiShotNumTimes = []
+        self.multiShotInjectors = []
         if self.comparingTo == "Experiment":
             for row in rowlist:
                 shotnumber_prompt = ttk.Label(controlFrame, text="Enter Shot Number")
@@ -336,6 +351,14 @@ class Emis3D_GUI(object):
                 numTimesEntry = ttk.Entry(controlFrame)
                 numTimesEntry.grid(row=2*row+1, column=3, padx=30, pady=10)
                 self.multiShotNumTimes.append(numTimesEntry)
+
+                injector_prompt = ttk.Label(controlFrame, text="Enter Injector Num")
+                injector_prompt.grid(column=4, row=2*row, padx=30, pady=10)
+                
+                injectorEntry = ttk.Entry(controlFrame)
+                injectorEntry.grid(column=4, row=2*row+1, padx=30, pady=10)
+                injectorEntry.insert(tk.END, '1')
+                self.multiShotInjectors.append(injectorEntry)
         else:
             warning_prompt = ttk.Label(controlFrame, text="This tab not yet set up\
                                        for fitting to simulation data")
@@ -352,7 +375,9 @@ class Emis3D_GUI(object):
             for shotIndx in range(len(self.multiShotList)):
                 shotnum = int(self.multiShotList[shotIndx].get())
                 if shotnum > 0:
-                    self.emis = self.init_emis3D_experimental(Shotnumber=shotnum)
+                    injectorNum = int(self.multiShotInjectors[shotIndx].get())
+                    self.emis = self.init_emis3D_experimental(\
+                        Shotnumber=shotnum, InjectorNum=injectorNum)
                     startTime = float(self.multiShotStartTimes[shotIndx].get())
                     endTime = float(self.multiShotEndTimes[shotIndx].get())
                     numTimes = int(self.multiShotNumTimes[shotIndx].get())
@@ -365,7 +390,9 @@ class Emis3D_GUI(object):
         
         if self.comparingTo == "Experiment":
             shotnum = int(self.shotnumberEntryOneTimestep.get())
-            self.emis = self.init_emis3D_experimental(Shotnumber=shotnum)
+            injectorNum = int(self.injectorEntryOneTimestep.get())
+            self.emis = self.init_emis3D_experimental(\
+                Shotnumber=shotnum, InjectorNum=injectorNum)
         elif self.comparingTo == "Simulation":
             self.emis = self.init_emis3D_simulational()
         
@@ -472,7 +499,9 @@ class Emis3D_GUI(object):
         
         if self.comparingTo == "Experiment":
             shotnum = int(self.shotnumberEntryRadPowerOverview.get())
-            self.emis = self.init_emis3D_experimental(Shotnumber=shotnum)
+            injectorNum = int(self.injectorEntryRadPowerOverview.get())
+            self.emis = self.init_emis3D_experimental(\
+                Shotnumber=shotnum, InjectorNum=injectorNum)
         elif self.comparingTo == "Simulation":
             self.emis = self.init_emis3D_simulational()
         
@@ -517,7 +546,11 @@ class Emis3D_GUI(object):
     def plots_whole_shot(self, Container, Emis3DObject, MovePeak):
         
         self.display_plot_overview(Container=Container, Emis3DObject = Emis3DObject)
-        #self.display_kb1_powers(Container=Container, Emis3DObject = Emis3DObject)
+        #if 
+        # self.display_kb1_powers(Container=Container, Emis3DObject = Emis3DObject)
+        #else:
+        #    pass
+
         if self.makeBoloContoursToggle.config('relief')[-1] == 'sunken':
             Emis3DObject.save_all_contour_plots()
         

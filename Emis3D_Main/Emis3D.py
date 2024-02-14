@@ -697,7 +697,7 @@ class Emis3D(object):
             outputExtrasDict = self.tok_specific_output_data()
             outputExtrasDf = pd.DataFrame.from_dict(outputExtrasDict)
             outputExtrasDf.to_excel(writer, sheet_name=str(self.shotnumber),\
-                                        startcol=len(excel_names) + 2)
+                                    startcol=len(excel_names) + 2)
         except:
             pass
         
