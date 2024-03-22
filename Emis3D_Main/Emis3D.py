@@ -379,6 +379,86 @@ class Emis3D(object):
         
         return yval
 
+    def asymmetric_gaussian_extrapeaked_arr(self, Phi, SigmaLeft, SigmaRight, Amplitude, Mu=None,
+        extrapeakMult = 1, extrapeakWidth=(2.0*math.pi/8.0), HArrayPhi=(5.0*math.pi/4.0)):
+        # Returns an asymmetric gaussian. Implemented to handle arrays, since the curve_fit
+        # function seems to need that
+        # has extra peaking of extrapeakMult within extrapeakWidth of injector location
+
+        injectorPhi = self.tokamakAMode.injectionPhiTor
+
+        if hasattr(Mu, "__len__"):
+            mu=Mu
+        elif Mu==None:
+            mu = self.tokamakAMode.injectionPhiTor
+        else:
+            mu=Mu
+        
+        if self.extrapeaked_variation == 1:
+            if hasattr(Phi, "__len__"): # check if Phi is array-like
+                yval = []
+                #for i in range(len(Phi)):
+                for phi in Phi:
+                    #phi = Phi[i]
+                    if phi < mu:
+                        newyval = self.gaussian_no_coeff(Phi=phi, Sigma=SigmaLeft, Mu=mu,\
+                                Amplitude=Amplitude, OffsetVert=0.0)
+                        if abs(phi - injectorPhi) <= extrapeakWidth:
+                            newyval = newyval*extrapeakMult
+                        yval.append(newyval)
+                    else:
+                        newyval = self.gaussian_no_coeff(Phi=phi, Sigma=SigmaRight, Mu=mu,\
+                                Amplitude=Amplitude, OffsetVert=0.0)
+                        if abs(phi - injectorPhi) <= extrapeakWidth:
+                            newyval = newyval*extrapeakMult
+                        yval.append(newyval)
+            else:
+                if Phi < mu:
+                    yval=self.gaussian_no_coeff(Phi=Phi, Sigma=SigmaLeft, Mu=mu,\
+                            Amplitude=Amplitude, OffsetVert=0.0)
+                else:
+                    yval=self.gaussian_no_coeff(Phi=Phi, Sigma=SigmaRight, Mu=mu,\
+                            Amplitude=Amplitude, OffsetVert=0.0)
+                if abs(Phi - injectorPhi) <= extrapeakWidth:
+                            yval = yval*extrapeakMult
+        elif self.extrapeaked_variation == 2:
+            if hasattr(Phi, "__len__"): # check if Phi is array-like
+                yval = []
+                #for i in range(len(Phi)):
+                for phi in Phi:
+                    if abs(phi - injectorPhi) <= extrapeakWidth:
+                        hArrayVal1 = self.gaussian_no_coeff(Phi=HArrayPhi, Sigma=SigmaRight, Mu=mu,\
+                                    Amplitude=Amplitude, OffsetVert=0.0)
+                        hArrayVal2 = self.gaussian_no_coeff(Phi=(HArrayPhi-(2.0*math.pi)), Sigma=SigmaLeft, Mu=mu,\
+                                    Amplitude=Amplitude, OffsetVert=0.0)
+                        newyval = (hArrayVal1 + hArrayVal2) * self.extrapeakedMult
+                        yval.append(newyval)
+                    else:
+                        if phi < mu:
+                            newyval = self.gaussian_no_coeff(Phi=phi, Sigma=SigmaLeft, Mu=mu,\
+                                    Amplitude=Amplitude, OffsetVert=0.0)
+                            yval.append(newyval)
+                        else:
+                            newyval = self.gaussian_no_coeff(Phi=phi, Sigma=SigmaRight, Mu=mu,\
+                                    Amplitude=Amplitude, OffsetVert=0.0)
+                            yval.append(newyval)
+            else:
+                if abs(Phi - injectorPhi) <= extrapeakWidth:
+                    hArrayVal1 = self.gaussian_no_coeff(Phi=HArrayPhi, Sigma=SigmaRight, Mu=mu,\
+                                    Amplitude=Amplitude, OffsetVert=0.0)
+                    hArrayVal2 = self.gaussian_no_coeff(Phi=(HArrayPhi-(2.0*math.pi)), Sigma=SigmaLeft, Mu=mu,\
+                                Amplitude=Amplitude, OffsetVert=0.0)
+                    yval = (hArrayVal1 + hArrayVal2) * self.extrapeakedMult
+                else:
+                    if Phi < mu:
+                        yval=self.gaussian_no_coeff(Phi=Phi, Sigma=SigmaLeft, Mu=mu,\
+                                Amplitude=Amplitude, OffsetVert=0.0)
+                    else:
+                        yval=self.gaussian_no_coeff(Phi=Phi, Sigma=SigmaRight, Mu=mu,\
+                                Amplitude=Amplitude, OffsetVert=0.0)
+
+        return yval
+
     def cosine_tordist_1pi_arr(self, Phi, BaselineAmplitude, CosineAmpFrac, Mu=None):  
         # Returns a cosine distribution from mu-pi to mu+pi. Implemented to handle arrays
 
@@ -542,6 +622,65 @@ class Emis3D(object):
                 plt.legend()
             plt.show()
             
+        return sigmaLeft, sigmaRight, amplitude, mu
+
+    def fit_asym_gaussian_extrapeaked(self, PhiCoords = np.array([-2.0, -1.0, 1.0, 2.0]),\
+                               FitYVals = np.array([3.0, 4.0, 3.0, 0.01]),\
+                               ParametersGuess = np.array([1.0, 1.0, 2.2, np.nan]),\
+                               MovePeak = False, PlotFit = False, MaxIters=800,\
+                                JetPaperPlot=False):
+        # for JetPaperPlot: PhiCoords = np.array([-3.0*np.pi/2.0, -3.0*np.pi/4.0, np.pi/2.0, 5.0*np.pi/4.0])
+        # for JetPaperPlot: FitYVals = np.array([3.0, 4.0, 1.0, 0.01])
+
+        if not MovePeak:
+            parametersGuess = ParametersGuess[0:3]
+            parameters = curve_fit(f=self.asymmetric_gaussian_extrapeaked_arr, xdata=PhiCoords,\
+                           ydata=FitYVals, p0=parametersGuess,\
+                           bounds = [(0.0, 0.0, 0.0),\
+                                     (np.inf, np.inf, np.inf)], maxfev=MaxIters)[0]
+    
+            sigmaLeft, sigmaRight, amplitude =\
+                parameters[0], parameters[1], parameters[2]
+            mu = self.tokamakAMode.injectionPhiTor
+        else:
+            parametersGuess = ParametersGuess
+            if np.isnan(ParametersGuess[3]):
+                parametersGuess[3] = self.tokamakAMode.injectionPhiTor
+            parameters = curve_fit(f=self.asymmetric_gaussian_extrapeaked_arr, xdata=PhiCoords,\
+                               ydata=FitYVals, p0=ParametersGuess,\
+                               bounds = [(0.0, 0.0, 0.0, - np.pi),\
+                                         (np.inf, np.inf, np.inf, np.pi)], maxfev=MaxIters)[0]
+    
+            sigmaLeft, sigmaRight, amplitude, mu =\
+                parameters[0], parameters[1], parameters[2], parameters[3]
+        
+        if PlotFit:
+            
+            xvalues = np.linspace(-2.0 * math.pi, 2.0 * math.pi, 100)
+            yvalues = self.asymmetric_gaussian_extrapeaked_arr(Phi=xvalues, SigmaLeft = sigmaLeft,\
+                SigmaRight = sigmaRight, Amplitude = amplitude, Mu=mu)
+            xaxisLabel = r'$\phi$ Toroidal [rad]'
+            yaxisLabel = "Radiation Structure\nAmplitude"
+            if JetPaperPlot:
+                plt.figure(figsize=(4.5,3.0))
+                plt.xlabel(xaxisLabel)
+                plt.ylabel(yaxisLabel)
+                plt.scatter(PhiCoords[2], FitYVals[2], color='dodgerblue', label = "Vert. Array Puncture 1")
+                plt.scatter(PhiCoords[0], FitYVals[0], color='dodgerblue', marker='^', label = "Vert. Array Puncture 2")
+                plt.plot(xvalues, yvalues, color='orange', label = "Asymmetric Gaussian Fit")
+                plt.scatter(PhiCoords[1], FitYVals[1], color='limegreen', label = "Hor. Array Puncture 1")
+                plt.scatter(PhiCoords[3], FitYVals[3], color='limegreen', marker='^', label = "Hor. Array Puncture 2")
+                plt.legend(ncol=2, loc='center right', bbox_to_anchor=(0.42, -0.3))
+                plt.tight_layout()
+            else:
+                plt.figure(figsize=(4.5,4.0))
+                plt.xlabel(xaxisLabel)
+                plt.ylabel(yaxisLabel)
+                plt.scatter(PhiCoords, FitYVals, label = "Puncture Values")
+                plt.plot(xvalues, yvalues, color='orange', label = "Toroidal Dist.")
+                plt.legend(ncol=1, loc='upper right', bbox_to_anchor=(1.0, 1.0))
+                plt.tight_layout()
+            plt.show()
         return sigmaLeft, sigmaRight, amplitude, mu
 
     def calc_rad_error(self, PvalCutoff, MovePeak):

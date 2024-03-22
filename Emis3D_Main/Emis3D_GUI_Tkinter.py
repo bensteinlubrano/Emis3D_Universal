@@ -11,6 +11,7 @@ from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 
 class Emis3D_GUI(object):
     
@@ -319,7 +320,8 @@ class Emis3D_GUI(object):
         self.multiShotList = []
         self.multiShotStartTimes = []
         self.multiShotEndTimes = []
-        self.multiShotNumTimes = []
+        #self.multiShotNumTimes = []
+        self.multiShotTimeRes = []
         self.multiShotInjectors = []
         if self.comparingTo == "Experiment":
             for row in rowlist:
@@ -344,13 +346,21 @@ class Emis3D_GUI(object):
                 endTimeEntry = ttk.Entry(controlFrame)
                 endTimeEntry.grid(row=2*row+1, column=2, padx=30, pady=10)
                 self.multiShotEndTimes.append(endTimeEntry)
-            
-                num_times_prompt = ttk.Label(controlFrame, text="Enter Number of Timesteps")
-                num_times_prompt.grid(row=2*row, column=3, padx=30, pady=10)
+
+                time_res_prompt = ttk.Label(controlFrame, text="Enter Timestep Spacing")
+                time_res_prompt.grid(row=2*row, column=3, padx=30, pady=10)
                 
-                numTimesEntry = ttk.Entry(controlFrame)
-                numTimesEntry.grid(row=2*row+1, column=3, padx=30, pady=10)
-                self.multiShotNumTimes.append(numTimesEntry)
+                timeResEntry = ttk.Entry(controlFrame)
+                timeResEntry.grid(row=2*row+1, column=3, padx=30, pady=10)
+                timeResEntry.insert(tk.END, '0.0005')
+                self.multiShotTimeRes.append(timeResEntry)
+
+                # num_times_prompt = ttk.Label(controlFrame, text="Enter Number of Timesteps")
+                # num_times_prompt.grid(row=2*row, column=3, padx=30, pady=10)
+                
+                # numTimesEntry = ttk.Entry(controlFrame)
+                # numTimesEntry.grid(row=2*row+1, column=3, padx=30, pady=10)
+                # self.multiShotNumTimes.append(numTimesEntry)
 
                 injector_prompt = ttk.Label(controlFrame, text="Enter Injector Num")
                 injector_prompt.grid(column=4, row=2*row, padx=30, pady=10)
@@ -380,7 +390,13 @@ class Emis3D_GUI(object):
                         Shotnumber=shotnum, InjectorNum=injectorNum)
                     startTime = float(self.multiShotStartTimes[shotIndx].get())
                     endTime = float(self.multiShotEndTimes[shotIndx].get())
-                    numTimes = int(self.multiShotNumTimes[shotIndx].get())
+                    #numTimes = int(self.multiShotNumTimes[shotIndx].get())
+                    timeRes = float(self.multiShotTimeRes[shotIndx].get())
+                    numTimes = (int(round((endTime-startTime)/timeRes))) + 1
+                    # print(endTime)
+                    # print(startTime)
+                    # print(timeRes)
+                    # print(numTimes)
                     self.emis.calc_tot_rad_from_exp(\
                             StartTime = startTime, EndTime=endTime, NumTimes=numTimes,\
                             ErrorPool=True, PvalCutoff=pvalCutoff, MovePeak=False)
