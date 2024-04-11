@@ -257,6 +257,12 @@ class Emis3D(object):
                         Bolo_exp_unsegmented=exp_powers_unsegmented, Synth_powers_segmented=synth_powers_segmented,\
                         PowerUpperBound=PowerUpperBound, MinPowerCutoff = minPowerCutoff,\
                         SegmentCenterPhis = segmentCenterPhis, MaxExpPower = maxExpPower)
+                elif radDist.distType in ["ElongatedRing"]:
+                    p0Firsts, p0Seconds, boundsFirsts, boundsSeconds, fittingFunc =\
+                        self.fitting_func_setup_segmented_ering(\
+                        Bolo_exp_unsegmented=exp_powers_unsegmented, Synth_powers_segmented=synth_powers_segmented,\
+                        PowerUpperBound=PowerUpperBound, MinPowerCutoff = minPowerCutoff,\
+                        SegmentCenterPhis = segmentCenterPhis, MaxExpPower = maxExpPower)
                 else:
                     p0Firsts, p0Seconds, boundsFirsts, boundsSeconds, fittingFunc =\
                         self.fitting_func_setup_segmented(\
