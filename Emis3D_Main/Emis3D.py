@@ -6,8 +6,9 @@ Created on Mon Apr 10 15:55:26 2023
 @author: br0148
 """
 
-from os import listdir
-from os.path import dirname, realpath, isfile, join
+import sys
+from os import listdir, remove
+from os.path import dirname, realpath, isfile, join, isdir
         
 FILE_PATH = dirname(realpath(__file__))
 EMIS3D_PARENT_DIRECTORY = dirname(dirname(FILE_PATH))
@@ -18,22 +19,25 @@ EMIS3D_INPUTS_DIRECTORY = join(EMIS3D_PARENT_DIRECTORY, "Emis3D_JET", "Emis3D_In
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import pdb
 from matplotlib.ticker import FormatStrFormatter
 from Util import RedChi2_To_Pvalue
-from scipy.optimize import minimize
+from scipy.optimize import minimize, curve_fit
 from copy import copy
 
 class Emis3D(object):
     
-    def __init__(self):
+    def __init__(self, TorSegmented=False):
         
+        self.torSegmented=TorSegmented
         self.allRadDistsVec = []
-        
         self.tokamakAMode = None # Always loaded
         self.tokamakBMode = None # Not loaded unless necessary; time consuming
         self.load_tokamak(Mode="Analysis")
         
         self.numTorLocs = self.tokamakAMode.numTorLocs
+        self.numCameras = self.tokamakAMode.numCameras # Added by GMB (11/20/2024)
         
         # In calc_fits
         self.chisqVec = None
@@ -50,18 +54,25 @@ class Emis3D(object):
         self.minRadDist = None
         self.minRadDistList = None
         self.minPreScaleList = None
-        self.minRadDistFits = None
+        self.minFitsFirsts = None
+        self.minFitsSeconds = None
         
     def load_raddists(self, TokamakName):
         
+        #Added into Universal
         self.allRadDistsVec = []
         
-        # returns all files in RadDist_Saves folder
-        onlyfiles = [f for f in listdir(self.raddist_saves_directory)\
-                     if isfile(join(self.raddist_saves_directory, f))]
-        
+        onlyfiles = []
+        for f in listdir(self.raddist_saves_directory):
+            if isdir(join(self.raddist_saves_directory, f)):
+                for ff in listdir(join(self.raddist_saves_directory, f)):
+                    if isfile(join(self.raddist_saves_directory,f,ff)):
+                        onlyfiles.append(join(self.raddist_saves_directory,f,ff))
+            elif isfile(join(self.raddist_saves_directory, f)):
+                onlyfiles.append(join(self.raddist_saves_directory,f))
+
         for distIndx in range(len(onlyfiles)):
-            loadFileName = join(self.raddist_saves_directory,onlyfiles[distIndx])
+            loadFileName = onlyfiles[distIndx]
             radDist = self.load_single_raddist(LoadFileName = loadFileName)
             
             self.allRadDistsVec.append(radDist)
@@ -72,7 +83,9 @@ class Emis3D(object):
         
         numChannels = np.sum([len(x) for x in BoloExpData])
         
-        bolo_exp = self.rearrange_powers_array(Powers = BoloExpData)
+        #bolo_exp = self.rearrange_powers_array(Powers = BoloExpData)
+        #Added in to Universal
+        bolo_exp = BoloExpData
         
         chisqlist = []
         pValList = []
@@ -82,13 +95,15 @@ class Emis3D(object):
         channel_errs = []
         
         # this is for different errors at each toroidal location
-        for i in range(self.numTorLocs):
+        # for i in range(self.numTorLocs):
+        # Changed for loop range to accomadate mutliple cameras at a single toroidal location (GMB 11/1/2024)
+        for i in range(int(len(self.tokamakAMode.boloToroidalPositions)/2)):
             expMax = np.max(bolo_exp[i])
             channel_errs.append(np.array([0.1 * expMax] * len(bolo_exp[i])))
             
         for radDist in RadDistVec:
-            synth_powers_p1 = self.rearrange_powers_array(copy(radDist.boloCameras_powers))
-            synth_powers_p2 = self.rearrange_powers_array(copy(radDist.boloCameras_powers_2nd))
+            synth_powers_p1 = self.rearrange_powers_array(Powers=copy(radDist.boloCameras_powers))
+            synth_powers_p2 = self.rearrange_powers_array(Powers=copy(radDist.boloCameras_powers_2nd))
             
             # removes any negative numbers from experimental data for prescaling.
             # negative channels should really be removed in fitting also; on JET, channel 16
@@ -109,14 +124,18 @@ class Emis3D(object):
                 synth_powers_p1[i] = np.array(synth_powers_p1[i]) * preScaleFactor
                 synth_powers_p2[i] = np.array(synth_powers_p2[i]) * preScaleFactor
             
+            # pdb.set_trace()
             p0Firsts, p0Seconds, boundsFirsts, boundsSeconds, fittingFunc =\
                 self.fitting_func_setup(Bolo_exp=bolo_exp, Synth_powers_p1=synth_powers_p1,\
                     Synth_powers_p2=synth_powers_p2, Channel_errs=channel_errs, PowerUpperBound=PowerUpperBound)
 
             res = minimize(fittingFunc, p0Firsts + p0Seconds, bounds=boundsFirsts+boundsSeconds)
             res.fun
-            fitsBoloFirsts.append(res.x[:self.numTorLocs])
-            fitsBoloSeconds.append(res.x[self.numTorLocs:])
+            # fitsBoloFirsts.append(res.x[:self.numTorLocs])
+            # fitsBoloSeconds.append(res.x[self.numTorLocs:])
+
+            fitsBoloFirsts.append(res.x[:2])
+            fitsBoloSeconds.append(res.x[2:])
             preScales.append(preScaleFactor)
             
             if radDist.distType == "Helical":
@@ -128,21 +147,108 @@ class Emis3D(object):
             pValList.append(RedChi2_To_Pvalue(chisq, degree_of_freedom))
         
         return chisqlist, pValList, fitsBoloFirsts, fitsBoloSeconds, channel_errs, preScales
-            
-    # calculates reduced chi^2 values for radiation structure library for one timestep
-    def calc_fits(self, Etime, ErrorPool = False, PvalCutoff = None):
+    
+    def calc_pvals_segmented(self, RadDistVec, BoloExpData, PowerUpperBound = 6000.0):
+        # only set up for SPARC, and the July 2023 Bolo configuration
+                
+        print("Calculating P-Values")
+        numChannels = self.tokamakAMode.numTorLocs\
+            * self.tokamakAMode.cameras_per_tor * self.tokamakAMode.channelsPerCamera
+
+        exp_powers_unsegmented = copy(BoloExpData)
+        maxExpPower = np.max(exp_powers_unsegmented)
+        minPowerCutoff = 0.0#0.01*maxExpPower
         
+        chisqlist = []
+        pValList = []
+        fitsBoloFirsts = []
+        fitsBoloSeconds = []
+        preScales = []
+        channel_errs = []
+        
+        for radDist in RadDistVec:
+            if radDist.distType == "Helical":
+                errStatement = """Segmented operation not yet configured for radiation structures
+                    with more than one puncture"""
+                print(errStatement) 
+                sys.exit(1)
+
+            synth_powers_unsegmented = copy(radDist.boloCameras_powers)
+            synth_powers_segmented = copy(radDist.bolo_powers_segmented)
+            num_segments = len(synth_powers_segmented[0][0])
+
+            #Creates an array of angles which correspond to the center of each segment.
+            # first half are positive, second half are negative: goes from 0 to pi then
+            # -pi to 0. To match how the powers array indexing works
+            halfSegmentPhiWidth = np.pi/num_segments
+            segmentCenterPhis = np.linspace(halfSegmentPhiWidth, (2.0*np.pi) - halfSegmentPhiWidth, num_segments)
+            for phiIndx in range(len(segmentCenterPhis)):
+                if segmentCenterPhis[phiIndx] > np.pi:
+                    segmentCenterPhis[phiIndx] += - 2*np.pi
+
+            # uniformly pre-scales synthetic powers to same order of magnitude as experimental
+            # data, to put in range of fitting algorithm
+            preScaleFactorNum = np.sum(exp_powers_unsegmented)
+            preScaleFactorDenom = np.sum(synth_powers_unsegmented)
+            preScaleFactor = preScaleFactorNum / preScaleFactorDenom
+            #print("Pre Scale Factor = " + str(preScaleFactor))
+
+            numIgnoredChannels = 0
+            # this loop for counting the number of ignored channels for the purposes of the degree of freedom
+            # and for uniformly rescaling the synthetic powers to start closer to the experimental values
+            for CameraIndx in range(len(exp_powers_unsegmented)):
+                for channelIndx in range(len(exp_powers_unsegmented[CameraIndx])):
+                    channelExpPower = exp_powers_unsegmented[CameraIndx][channelIndx] 
+                    if channelExpPower <= minPowerCutoff:
+                        numIgnoredChannels +=1
+                    for channelSegmentIndx in range(len(synth_powers_segmented[CameraIndx][channelIndx])):
+                        segmentSynthPower = synth_powers_segmented[CameraIndx][channelIndx][channelSegmentIndx]
+                        synth_powers_segmented[CameraIndx][channelIndx][channelSegmentIndx] = segmentSynthPower * preScaleFactor
+                    #print("Channel Exp Power = " + str(channelExpPower))
+                    #print("Channel Synth Power = " + str(channelSynthPower))            
+            
+            p0Firsts, p0Seconds, boundsFirsts, boundsSeconds, fittingFunc =\
+                self.fitting_func_setup_segmented(\
+                Bolo_exp_unsegmented=exp_powers_unsegmented, Synth_powers_segmented=synth_powers_segmented,\
+                PowerUpperBound=PowerUpperBound, MinPowerCutoff = minPowerCutoff,\
+                SegmentCenterPhis = segmentCenterPhis, MaxExpPower = maxExpPower)
+            
+            #starting_chi2 = fittingFunc([1.0, 1.0, 1.0])
+            #print("Starting chi2 = " + str(starting_chi2))
+            
+            res = minimize(fittingFunc, p0Firsts, bounds=boundsFirsts) # second punctures not yet involved
+            res.fun
+            fitsBoloFirsts.append(res.x[:self.numTorLocs])
+            fitsBoloSeconds.append(res.x[self.numTorLocs:])
+            preScales.append(preScaleFactor)
+            
+            degree_of_freedom = numChannels - (len(p0Firsts) + 1) - numIgnoredChannels
+            chisq = (res.fun)/degree_of_freedom
+            chisqlist.append(chisq)
+            pValList.append(RedChi2_To_Pvalue(chisq, degree_of_freedom))
+        
+        #print(chisqlist)
+        return chisqlist, pValList, fitsBoloFirsts, fitsBoloSeconds, channel_errs, preScales
+            
+    def calc_fits(self, Etime, ErrorPool = False, PvalCutoff = None):
+        # calculates reduced chi^2 values for radiation structure library for one timestep
+
         if len(self.allRadDistsVec) == 0:
             self.load_raddists(TokamakName = self.tokamakAMode.tokamakName)
-        
+
         if self.comparingTo == "Experiment":
             boloExpData = self.load_bolo_exp_timestep(EvalTime = Etime)
         elif self.comparingTo == "Simulation":
             boloExpData = self.load_radDist_as_exp()[Etime]
         
-        self.chisqVec, self.pvalVec, self.fitsBoloFirsts, self.fitsBoloSeconds,\
-            self.channel_errs, self.preScaleVec =\
-            self.calc_pvals(self.allRadDistsVec, BoloExpData = boloExpData)
+        if self.torSegmented:
+            self.chisqVec, self.pvalVec, self.fitsBoloFirsts, self.fitsBoloSeconds,\
+                self.channel_errs, self.preScaleVec =\
+                self.calc_pvals_segmented(self.allRadDistsVec, BoloExpData = boloExpData)
+        else:
+            self.chisqVec, self.pvalVec, self.fitsBoloFirsts, self.fitsBoloSeconds,\
+                self.channel_errs, self.preScaleVec =\
+                self.calc_pvals(self.allRadDistsVec, BoloExpData = boloExpData)
         
         # take minimum pval RadDist, which is the closest fit
         if min(self.pvalVec) == 1.0: # covers case where Pvals bottom out (no pval better than 3). Not Ideal.
@@ -157,6 +263,18 @@ class Emis3D(object):
         print("best fit chi2 at this timestep is " + str(self.minchisq))
         self.minpval = self.pvalVec[self.minInd]
         self.minRadDist = self.allRadDistsVec[self.minInd]
+        print(self.minRadDist.startR)
+        print(self.minRadDist.startZ)
+        print(self.minRadDist.polSigma)
+        print("Best fits first:", self.bestFitsBoloFirsts)
+        print("Best fits second:", self.bestFitsBoloSeconds)
+
+
+
+        if self.torSegmented:
+            print("best fit radDist at this timestep is toroidal z=" + str(self.minRadDist.startZ)\
+                + ", r=" + str(self.minRadDist.startR)\
+                + ", polsigma=" + str(self.minRadDist.polSigma))
         
         if ErrorPool:
             self.errorDists=[]
@@ -190,9 +308,10 @@ class Emis3D(object):
             return self.gaussian(Phi=Phi, Sigma=Sigma, Mu=Mu,
                                  Amplitude=Amplitude, OffsetVert=OffsetVert) / coeff
     
-    # Returns an asymmetric gaussian. Implemented to handle arrays, since the curve_fit
-    # function seems to need that
     def asymmetric_gaussian_arr(self, Phi, SigmaLeft, SigmaRight, Amplitude, Mu=None):
+        # Returns an asymmetric gaussian. Implemented to handle arrays, since the curve_fit
+        # function seems to need that
+
         if hasattr(Mu, "__len__"):
             mu=Mu
         elif Mu==None:
@@ -220,7 +339,62 @@ class Emis3D(object):
                         Amplitude=Amplitude, OffsetVert=0.0)   
         
         return yval
+
+    def fit_asym_gaussian(self, PhiCoords = np.array([-2.0, -1.0, 1.0, 2.0]),\
+                               FitYVals = np.array([3.0, 4.0, 3.0, 0.01]),\
+                               ParametersGuess = np.array([1.0, 1.0, 2.2, np.nan]),\
+                               MovePeak = False, PlotFit = False, MaxIters=800,\
+                                JetPaperPlot=False):
+        # for JetPaperPlot: PhiCoords = np.array([-3.0*np.pi/2.0, -3.0*np.pi/4.0, np.pi/2.0, 5.0*np.pi/4.0])
+        # for JetPaperPlot: FitYVals = np.array([3.0, 4.0, 1.0, 0.01])
+
+        if not MovePeak:
+            parametersGuess = ParametersGuess[0:3]
+            parameters = curve_fit(f=self.asymmetric_gaussian_arr, xdata=PhiCoords,\
+                           ydata=FitYVals, p0=parametersGuess,\
+                           bounds = [(0.0, 0.0, 0.0),\
+                                     (np.inf, np.inf, np.inf)], maxfev=MaxIters)[0]
+    
+            sigmaLeft, sigmaRight, amplitude =\
+                parameters[0], parameters[1], parameters[2]
+            mu = self.tokamakAMode.injectionPhiTor
+        else:
+            parametersGuess = ParametersGuess
+            if np.isnan(ParametersGuess[3]):
+                parametersGuess[3] = self.tokamakAMode.injectionPhiTor
+            parameters = curve_fit(f=self.asymmetric_gaussian_arr, xdata=PhiCoords,\
+                               ydata=FitYVals, p0=ParametersGuess,\
+                               bounds = [(0.0, 0.0, 0.0, - np.pi),\
+                                         (np.inf, np.inf, np.inf, np.pi)], maxfev=MaxIters)[0]
+    
+            sigmaLeft, sigmaRight, amplitude, mu =\
+                parameters[0], parameters[1], parameters[2], parameters[3]
+        
+        if PlotFit:
+            plt.figure(figsize=(4.5,3.0))
+            xvalues = np.linspace(-2.0 * math.pi, 2.0 * math.pi, 100)
+            yvalues = self.asymmetric_gaussian_arr(Phi=xvalues, SigmaLeft = sigmaLeft,\
+                SigmaRight = sigmaRight, Amplitude = amplitude, Mu=mu)
+            xaxisLabel = r'$\phi$ Toroidal [rad]'
+            yaxisLabel = "Radiation Structure\nAmplitude"
+            plt.xlabel(xaxisLabel)
+            plt.ylabel(yaxisLabel)
+            if JetPaperPlot:
+                plt.scatter(PhiCoords[2], FitYVals[2], color='dodgerblue', label = "Vert. Array Puncture 1")
+                plt.scatter(PhiCoords[0], FitYVals[0], color='dodgerblue', marker='^', label = "Vert. Array Puncture 2")
+                plt.plot(xvalues, yvalues, color='orange', label = "Asymmetric Gaussian Fit")
+                plt.scatter(PhiCoords[1], FitYVals[1], color='limegreen', label = "Hor. Array Puncture 1")
+                plt.scatter(PhiCoords[3], FitYVals[3], color='limegreen', marker='^', label = "Hor. Array Puncture 2")
+                plt.legend(ncol=2, loc='upper center', bbox_to_anchor=(0.42, -0.3))
+                plt.tight_layout()
+            else:
+                plt.scatter(PhiCoords, FitYVals, label = "Puncture Values")
+                plt.plot(xvalues, yvalues, color='orange', label = "Asymmetric Gaussian Fit")
+                plt.legend()
+            plt.show()
             
+        return sigmaLeft, sigmaRight, amplitude, mu
+
     def calc_rad_error(self, PvalCutoff, MovePeak):
         # finds error bar ranges of rad power and tpf for a single timestep
         
@@ -323,9 +497,9 @@ class Emis3D(object):
         self.upperTotWrad = self.upperAccumWrads[-1]
         self.lowerTotWrad = self.lowerAccumWrads[-1]
     
-    # Output data from Emis3D as an excel file
     def output_to_excel(self):
-        
+        # Output data from Emis3D as an excel file
+
         import pandas as pd
         
         # choose which variables to output to file, and what names they get in excel file
@@ -383,7 +557,7 @@ class Emis3D(object):
         ax.set_aspect('equal')
         ax.set_xlabel('$R$ (m)')
         ax.set_ylabel('$Z$ (m)')
-        
+
         # Create color contour of fits
         tcf = ax.tricontourf(plotRVecs, plotZVecs, PlotData,\
             levels=Levels, cmap='gist_stern')
@@ -408,7 +582,8 @@ class Emis3D(object):
         ax.set_title(str(PlotDistType) + "s")
         
         # Set colorbar
-        fig.colorbar(tcf, ax=ax, label=ColorBarLabel, shrink=0.5, format='%d')
+        # fig.colorbar(tcf, ax=ax, label=ColorBarLabel, shrink=0.5, format='%d')
+        cb = fig.colorbar(tcf, ax=ax, label=ColorBarLabel, shrink=0.5, format='%d')
         
         # Plot first wall curve
         r = self.tokamakAMode.wallcurve.vertices[:,0]
@@ -416,7 +591,7 @@ class Emis3D(object):
         ax.plot(r,z, 'orange')
         
         # Plot Q=1.1,2, and 3 surfaces
-        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=1.1)
+        r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=1.24)
         ax.plot(r,z, "cyan")
         r, z = self.tokamakAMode.get_qsurface_contour(Shotnumber=self.shotnumber, EvalTime=Etime-5e-4, Qval=2.0)
         ax.plot(r,z, "cyan")
@@ -445,8 +620,7 @@ class Emis3D(object):
             ColorBarLabel='$\chi^2_r$', PlotDistType=PlotDistType)
         
         return fig
-        
-    
+         
     def plot_powers_array(self, Lengthx=3, Lengthy=4, Etime = 50.89, PlotDistType = "Helical",\
                           MovePeak=False):
         
@@ -464,7 +638,8 @@ class Emis3D(object):
                     MovePeak=MovePeak)[0]
 
                 plotDistsRadPowers.append(radPower)
-                
+        
+        print("MIN")
         bestFitRadDist = self.allRadDistsVec[self.minInd]
         bestFitRadPower = self.calc_rad_power(RadDist=bestFitRadDist, PreScale=self.preScaleVec[self.minInd],\
                     FitsFirsts=self.fitsBoloFirsts[self.minInd], FitsSeconds=self.fitsBoloSeconds[self.minInd],\
@@ -477,84 +652,219 @@ class Emis3D(object):
         for i in range(len(plotDistsRadPowers)):
             if plotDistsRadPowers[i] > (10.0 * bestFitRadPower):
                 plotDistsRadPowers[i] = 0.0
+            elif np.isnan(plotDistsRadPowers[i]):
+                plotDistsRadPowers[i] = 0.0
         
-        levels = np.linspace(0, max(plotDistsRadPowers)/1e9, num=20)
+        # levels = np.linspace(0, max(plotDistsRadPowers)/1e9, num=20)
+        levels = np.linspace(0, max(plotDistsRadPowers), num=20)
+        levels = [int(x) for x in levels]
         
+        # fig = self.plot_radDist_array(\
+        #     PlotData=np.array(plotDistsRadPowers)/1e9, Levels=levels,\
+        #     Lengthx=Lengthx, Lengthy=Lengthy, Etime=Etime,\
+        #     ColorBarLabel='$P_{rad}$ (GW)', PlotDistType = PlotDistType)
+
         fig = self.plot_radDist_array(\
-            PlotData=np.array(plotDistsRadPowers)/1e9, Levels=levels,\
+            PlotData=np.array(plotDistsRadPowers), Levels=levels,\
             Lengthx=Lengthx, Lengthy=Lengthy, Etime=Etime,\
-            ColorBarLabel='$P_{rad}$ (GW)', PlotDistType = PlotDistType)
+            ColorBarLabel='$P_{rad}$ [W]', PlotDistType = PlotDistType)
         
         return fig
     
+    # def plot_fits_channels(self, Etime = 50.89, AsBrightness = True):
+        
+    #     bolo_exp, synthArrayFirst, synthArraySecond = self.plot_fits_data_organization(Etime=Etime)
+        
+    #     fig, axs = plt.subplots(self.numTorLocs, 1, figsize=(3,2*self.numTorLocs)) # Maybe change self.numTorLocs to self.numCameras
+        
+    #     channel_errs = self.channel_errs
+        
+    #     # Added by GMB
+    #     boloToroidalPositions = self.tokamakAMode.boloToroidalPositions
+        
+    #     for numTor in range(self.numTorLocs):
+    #         ax = axs[numTor]
+
+    #         # Need to convert from radians to degrees and then put degree symbol in label (GMB)
+    #         boloToroidalPosition = int(boloToroidalPositions[2*numTor]*(180/np.pi))
+    
+    #         #Remove error bars that are larger than measurement itself, just for plotting
+    #         for errIndex in range(len(channel_errs[numTor])):
+    #             try:
+    #                 if abs(channel_errs[numTor][errIndex]) > abs(bolo_exp[numTor][errIndex]):
+    #                     channel_errs[numTor][errIndex] = 0.0
+    #             except:
+    #                 pass
+                    
+    #         # convert to power per m^2
+    #         if AsBrightness:
+    #             for i in range(len(bolo_exp[numTor])):
+    #                 bolo_exp[numTor][i] = bolo_exp[numTor][i] * 4.0 * math.pi / self.bolo_etendues[numTor][i]
+    #                 synthArrayFirst[numTor][i] = synthArrayFirst[numTor][i] * 4.0 * math.pi / self.bolo_etendues[numTor][i]
+    #                 # only works if there is a second puncture, otherwise length of list is wrong
+    #                 try:
+    #                     synthArraySecond[numTor][i] = synthArraySecond[numTor][i] * 4.0 * math.pi / self.bolo_etendues[numTor][i]
+    #                 except:
+    #                     pass
+                
+
+    #             # for MW / m^2
+    #             # ax.set_ylabel(r"Power Location" + str(numTor) + " $(MW/m^2)$")
+    #             ax.set_ylabel("$P_{rad}$ (" + str(boloToroidalPosition) + "$^\circ$) [W/m$^2$]")
+    #             ax.set_xlabel("Channel Number")
+    #             bolo_exp[numTor] = [x * 1e-6 for x in bolo_exp[numTor]]
+    #             channel_errs[numTor] = [x * 1e-6 for x in channel_errs[numTor]]    
+    #             synthArrayFirst[numTor] = [x * 1e-6 for x in synthArrayFirst[numTor]]
+    #             try:
+    #                 synthArraySecond[numTor] = [x * 1e-6 for x in synthArraySecond[numTor]]
+    #             except:
+    #                 pass
+            
+    #         else:
+    #             # for watts
+    #             multiplier = 1.0
+    #             # ax.set_ylabel(r"Power Location " + str(numTor) + " $(W)$")
+    #             ax.set_ylabel("$P_{rad}$ (" + str(boloToroidalPosition) + "$^\circ$) [W]")
+    #             ax.set_xlabel("Channel Number")
+    #             # for milliwatts
+    #             #multiplier =1e3
+    #             #ax.set_ylabel(r"Power Location " + str(numTor) + " $(mW)$")
+                
+    #             bolo_exp[numTor] = [x * multiplier for x in bolo_exp[numTor]]
+    #             channel_errs[numTor] = [x * multiplier for x in channel_errs[numTor]]    
+    #             synthArrayFirst[numTor] = [x * multiplier for x in synthArrayFirst[numTor]]    
+    #             synthArraySecond[numTor] = [x * multiplier for x in synthArraySecond[numTor]] 
+            
+    #         channelNum = range(len(bolo_exp[numTor]))
+
+    #         # try:
+    #         #     ax.errorbar(channelNum, bolo_exp[numTor], yerr=channel_errs[numTor], label='Experiment', color='blue')
+    #         # except:
+    #         #     ax.plot(channelNum, bolo_exp[numTor], label='Experiment', color='blue')
+    #         # ax.plot(channelNum, synthArrayFirst[numTor], '-s', label='1st Puncture', color='gray')
+    #         # try:
+    #         #     ax.plot(channelNum, synthArraySecond[numTor], '-x', label='2nd Puncture', color='gray')
+    #         #     ax.plot(channelNum, ([synthArrayFirst[numTor][i] + synthArraySecond[numTor][i]\
+    #         #         for i in range(len(synthArrayFirst[numTor]))]),\
+    #         #         '-o', label='Full Synthetic', color='green')
+    #         # except:
+    #         #     pass
+
+    #         # Plots fits in [W] instead of [GW] (Added by GMB 11/20/2024)
+    #         try:
+    #             ax.errorbar(channelNum, np.array(bolo_exp[numTor])*1e9, yerr=np.array(channel_errs[numTor])*1e9, label='Experiment', color='blue')
+    #         except:
+    #             ax.plot(channelNum, np.array(bolo_exp[numTor])*1e9, label='Experiment', color='blue')
+    #         ax.plot(channelNum, np.array(synthArrayFirst[numTor])*1e9, '-s', label='1st Puncture', color='gray')
+    #         try:
+    #             ax.plot(channelNum, np.array(synthArraySecond[numTor])*1e9, '-x', label='2nd Puncture', color='gray')
+    #             ax.plot(channelNum, np.array([synthArrayFirst[numTor][i] + synthArraySecond[numTor][i]\
+    #                 for i in range(len(synthArrayFirst[numTor]))])*1e9,\
+    #                 '-o', label='Full Synthetic', color='green')
+    #         except:
+    #             pass
+
+    #         # ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        
+    #     plt.tight_layout()
+        
+    #     return fig
+
+    # New function created by GMB to use all cameras at each toroidal location, not just assume only one is present
     def plot_fits_channels(self, Etime = 50.89, AsBrightness = True):
         
         bolo_exp, synthArrayFirst, synthArraySecond = self.plot_fits_data_organization(Etime=Etime)
-        
-        fig, axs = plt.subplots(self.numTorLocs, 1, figsize=(3,2*self.numTorLocs))
+
+        fig, axs = plt.subplots(self.numCameras, 1, figsize=(3,2*self.numCameras)) # Maybe change self.numTorLocs to self.numCameras
         
         channel_errs = self.channel_errs
         
-        for numTor in range(self.numTorLocs):
-            ax = axs[numTor]
+        # Added by GMB
+        boloToroidalPositions = self.tokamakAMode.boloToroidalPositions
+        
+        for numCamera in range(self.numCameras):
+            ax = axs[numCamera]
+
+            # Need to convert from radians to degrees and then put degree symbol in label (GMB)
+            boloToroidalPosition = int(boloToroidalPositions[2*numCamera]*(180/np.pi))
     
             #Remove error bars that are larger than measurement itself, just for plotting
-            for errIndex in range(len(channel_errs[numTor])):
+            for errIndex in range(len(channel_errs[numCamera])):
                 try:
-                    if abs(channel_errs[numTor][errIndex]) > abs(bolo_exp[numTor][errIndex]):
-                        channel_errs[numTor][errIndex] = 0.0
+                    if abs(channel_errs[numCamera][errIndex]) > abs(bolo_exp[numCamera][errIndex]):
+                        channel_errs[numCamera][errIndex] = 0.0
                 except:
                     pass
                     
             # convert to power per m^2
             if AsBrightness:
-                for i in range(len(bolo_exp[numTor])):
-                    bolo_exp[numTor][i] = bolo_exp[numTor][i] * 4.0 * math.pi / self.bolo_etendues[numTor][i]
-                    synthArrayFirst[numTor][i] = synthArrayFirst[numTor][i] * 4.0 * math.pi / self.bolo_etendues[numTor][i]
+                for i in range(len(bolo_exp[numCamera])):
+                    bolo_exp[numCamera][i] = bolo_exp[numCamera][i] * 4.0 * math.pi / self.bolo_etendues[numCamera][i]
+                    synthArrayFirst[numCamera][i] = synthArrayFirst[numCamera][i] * 4.0 * math.pi / self.bolo_etendues[numCamera][i]
                     # only works if there is a second puncture, otherwise length of list is wrong
                     try:
-                        synthArraySecond[numTor][i] = synthArraySecond[numTor][i] * 4.0 * math.pi / self.bolo_etendues[numTor][i]
+                        synthArraySecond[numCamera][i] = synthArraySecond[numCamera][i] * 4.0 * math.pi / self.bolo_etendues[numCamera][i]
                     except:
                         pass
                 
 
                 # for MW / m^2
-                ax.set_ylabel(r"Power Location " + str(numTor) + " $(MW/m^2)$")
-                bolo_exp[numTor] = [x * 1e-6 for x in bolo_exp[numTor]]
-                channel_errs[numTor] = [x * 1e-6 for x in channel_errs[numTor]]    
-                synthArrayFirst[numTor] = [x * 1e-6 for x in synthArrayFirst[numTor]]
+                # ax.set_ylabel(r"Power Location" + str(numTor) + " $(MW/m^2)$")
+                ax.set_ylabel("$P_{rad}$ (" + str(boloToroidalPosition) + "$^\circ$) [W/m$^2$]")
+                ax.set_xlabel("Channel Number")
+                bolo_exp[numCamera] = [x * 1e-6 for x in bolo_exp[numCamera]]
+                channel_errs[numCamera] = [x * 1e-6 for x in channel_errs[numCamera]]    
+                synthArrayFirst[numCamera] = [x * 1e-6 for x in synthArrayFirst[numCamera]]
                 try:
-                    synthArraySecond[numTor] = [x * 1e-6 for x in synthArraySecond[numTor]]
+                    synthArraySecond[numCamera] = [x * 1e-6 for x in synthArraySecond[numCamera]]
                 except:
                     pass
             
             else:
                 # for watts
                 multiplier = 1.0
-                ax.set_ylabel(r"Power Location " + str(numTor) + " $(W)$")
+                # ax.set_ylabel(r"Power Location " + str(numTor) + " $(W)$")
+                ax.set_ylabel("$P_{rad}$ (" + str(boloToroidalPosition) + "$^\circ$) [W]")
+                ax.set_xlabel("Channel Number")
                 # for milliwatts
                 #multiplier =1e3
                 #ax.set_ylabel(r"Power Location " + str(numTor) + " $(mW)$")
                 
-                bolo_exp[numTor] = [x * multiplier for x in bolo_exp[numTor]]
-                channel_errs[numTor] = [x * multiplier for x in channel_errs[numTor]]    
-                synthArrayFirst[numTor] = [x * multiplier for x in synthArrayFirst[numTor]]    
-                synthArraySecond[numTor] = [x * multiplier for x in synthArraySecond[numTor]] 
+                bolo_exp[numCamera] = [x * multiplier for x in bolo_exp[numCamera]]
+                channel_errs[numCamera] = [x * multiplier for x in channel_errs[numCamera]]    
+                synthArrayFirst[numCamera] = [x * multiplier for x in synthArrayFirst[numCamera]]    
+                synthArraySecond[numCamera] = [x * multiplier for x in synthArraySecond[numCamera]] 
             
-            channelNum = range(len(bolo_exp[numTor]))
+            channelNum = range(len(bolo_exp[numCamera]))
+
+            # try:
+            #     ax.errorbar(channelNum, bolo_exp[numTor], yerr=channel_errs[numTor], label='Experiment', color='blue')
+            # except:
+            #     ax.plot(channelNum, bolo_exp[numTor], label='Experiment', color='blue')
+            # ax.plot(channelNum, synthArrayFirst[numTor], '-s', label='1st Puncture', color='gray')
+            # try:
+            #     ax.plot(channelNum, synthArraySecond[numTor], '-x', label='2nd Puncture', color='gray')
+            #     ax.plot(channelNum, ([synthArrayFirst[numTor][i] + synthArraySecond[numTor][i]\
+            #         for i in range(len(synthArrayFirst[numTor]))]),\
+            #         '-o', label='Full Synthetic', color='green')
+            # except:
+            #     pass
+
+            # Plots fits in [W] instead of [GW] (Added by GMB 11/20/2024)
             try:
-                ax.errorbar(channelNum, bolo_exp[numTor], yerr=channel_errs[numTor], label='Experiment', color='blue')
+                ax.errorbar(channelNum, np.array(bolo_exp[numCamera])*1e9, yerr=np.array(channel_errs[numCamera])*1e9, label='Experiment', color='blue')
             except:
-                ax.plot(channelNum, bolo_exp[numTor], label='Experiment', color='blue')
-            ax.plot(channelNum, synthArrayFirst[numTor], '-s', label='1st Puncture', color='gray')
+                ax.plot(channelNum, np.array(bolo_exp[numCamera])*1e9, label='Experiment', color='blue')
+            ax.plot(channelNum, np.array(synthArrayFirst[numCamera])*1e9, '-s', label='1st Puncture', color='gray')
             try:
-                ax.plot(channelNum, synthArraySecond[numTor], '-x', label='2nd Puncture', color='gray')
-                ax.plot(channelNum, ([synthArrayFirst[numTor][i] + synthArraySecond[numTor][i]\
-                    for i in range(len(synthArrayFirst[numTor]))]),\
+                ax.plot(channelNum, np.array(synthArraySecond[numCamera])*1e9, '-x', label='2nd Puncture', color='gray')
+                ax.plot(channelNum, np.array([synthArrayFirst[numCamera][i] + synthArraySecond[numCamera][i]\
+                    for i in range(len(synthArrayFirst[numCamera]))])*1e9,\
                     '-o', label='Full Synthetic', color='green')
             except:
                 pass
-            ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+
+            # ax.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
         
         plt.tight_layout()
         
@@ -704,8 +1014,13 @@ class Emis3D(object):
         self.save_bolos_contour_plot(Times = simTimebase, Bolo_vals = simData,\
             Title = Title, SaveName = SaveName, SaveFolder = SaveFolder)
         
-    def make_crossSec_movie(self, Phi=0.0):
+    def make_crossSec_movie(self, Phi=None, MovePeak=False):
+
+        import cv2
         
+        if Phi==None:
+            Phi=self.tokamakAMode.injectionPhiTor
+
         self.load_tokamak(Mode="Build")
         numFillZeros = len(str(len(self.minRadDistList)))
         for radDistNum in range(len(self.minRadDistList)):
@@ -715,31 +1030,97 @@ class Emis3D(object):
             radDist.set_tokamak(self.tokamakBMode)
             radDist.make_build_mode()
             
-            crossSecPlot = radDist.plot_crossSec(Phi=Phi)
+            if radDist.distType == "Helical":
+
+                sigmaLeft, sigmaRight, amplitude, mu =\
+                    self.find_asym_gaussian_parameters(\
+                    FitsFirsts=self.minFitsFirsts[radDistNum],\
+                    FitsSeconds=self.minFitsSeconds[radDistNum], MovePeak=MovePeak)
+
+                def torDistFunc(Phi0):
+                    val = self.asymmetric_gaussian_arr(Phi=Phi0, SigmaLeft=sigmaLeft, SigmaRight=sigmaRight,\
+                        Amplitude=amplitude, Mu=mu)
+                    return val
+
+                crossSecPlot = radDist.plot_crossSec(Phi=Phi, TorDistFunc = torDistFunc)
+            else:
+                crossSecPlot = radDist.plot_crossSec(Phi=Phi)
 
             crossSecPlot.savefig(savefile, format='png')
             plt.close(crossSecPlot)
-        
-        """
-        import cv2
 
-        video_name = 'Animations/crossSecs.avi'
+        video_name = join(self.videos_output_directory, "crossSecs.avi")
 
-        images = [img for img in listdir(image_folder) if img.endswith(".png") and img.startswith('crossSecImg')]
+        images = [img for img in listdir(self.videos_output_directory)\
+            if img.endswith(".png") and img.startswith('crossSecImg')]
         images.sort()
-        frame = cv2.imread(join(image_folder, images[0]))
+        frame = cv2.imread(join(self.videos_output_directory, images[0]))
         height, width, layers = frame.shape
 
         video = cv2.VideoWriter(video_name, 0, 1, (width,height))
 
         for image in images:
-            video.write(cv2.imread(join(image_folder, image)))
+            video.write(cv2.imread(join(self.videos_output_directory, image)))
             
         for radDistNum in range(len(self.minRadDistList)):
-            savefile = join(image_folder, "crossSecImg") +\
+            savefile = join(self.videos_output_directory, "crossSecImg") +\
                         str(radDistNum).zfill(numFillZeros) + ".png"
             remove(savefile)
 
         video.release()
-        """
-        #return video
+
+    def make_unwrapped_movie(self,\
+        Resolution = 30, Alpha = 0.005, SpotSize=20, MovePeak=False):
+        import cv2
+
+        self.load_tokamak(Mode="Build")
+        numFillZeros = len(str(len(self.minRadDistList)))
+        
+        for radDistNum in range(len(self.minRadDistList)):
+            savefile = join(self.videos_output_directory, "radDistImg") +\
+                        str(radDistNum).zfill(numFillZeros) + ".png"
+            radDist = copy(self.minRadDistList[radDistNum])
+            radDist.set_tokamak(self.tokamakBMode)
+            radDist.make_build_mode()
+            
+            if radDist.distType == "Helical":
+
+                sigmaLeft, sigmaRight, amplitude, mu =\
+                    self.find_asym_gaussian_parameters(\
+                    FitsFirsts=self.minFitsFirsts[radDistNum],\
+                    FitsSeconds=self.minFitsSeconds[radDistNum], MovePeak=MovePeak)
+
+                def torDistFunc(Phi0):
+                    val = self.asymmetric_gaussian_arr(Phi=Phi0, SigmaLeft=sigmaLeft, SigmaRight=sigmaRight,\
+                        Amplitude=amplitude, Mu=mu)
+                    return val
+
+                radDistPlot = radDist.plot_unwrapped(TorDistFunc = torDistFunc,\
+                    SpotSize = SpotSize, Resolution=Resolution, Alpha=Alpha)
+            else:
+                radDistPlot = radDist.plot_unwrapped(\
+                    SpotSize = SpotSize, Resolution=Resolution, Alpha=Alpha)
+            
+            
+            radDistPlot.savefig(savefile, format='png')
+            plt.close(radDistPlot)
+
+        video_name = join(self.videos_output_directory, "unwrapped.avi")
+
+        images = [img for img in listdir(self.videos_output_directory) if img.endswith(".png") and img.startswith('radDistImg')]
+        images.sort()
+        frame = cv2.imread(join(self.videos_output_directory, images[0]))
+        height, width, layers = frame.shape
+
+        video = cv2.VideoWriter(video_name, 0, 1, (width,height))
+
+        for image in images:
+            video.write(cv2.imread(join(self.videos_output_directory, image)))
+
+        for radDistNum in range(len(self.minRadDistList)):
+            savefile = join(self.videos_output_directory, "radDistImg") +\
+                        str(radDistNum).zfill(numFillZeros) + ".png"
+            remove(savefile)
+
+        video.release()
+

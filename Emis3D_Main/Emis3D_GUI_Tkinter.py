@@ -5,12 +5,21 @@ Created on Tue Apr 11 18:17:46 2023
 
 @author: br0148
 """
+from os.path import dirname, realpath, join
+FILE_PATH = dirname(realpath(__file__))
+EMIS3D_PARENT_DIRECTORY = dirname(dirname(FILE_PATH))
+EMIS3D_UNIVERSAL_MAIN_DIRECTORY = join(EMIS3D_PARENT_DIRECTORY,\
+                                       "Emis3D_Universal", "Emis3D_Main")
+EMIS3D_INPUTS_DIRECTORY = join(EMIS3D_PARENT_DIRECTORY, "Emis3D_DIIID", "Emis3D_Inputs")
+EMIS3D_OUTPUTS_DIRECTORY = join(EMIS3D_PARENT_DIRECTORY, "Emis3D_DIIID", "Emis3D_Outputs")
+
 
 import tkinter as tk
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 import numpy as np
+import pdb
 
 class Emis3D_GUI(object):
     
@@ -66,56 +75,83 @@ class Emis3D_GUI(object):
             self.build_radDists_error.grid_forget()
             self.build_radDists_error = ttk.Label(ErrContainer, text=Message)
             self.build_radDists_error.grid(column=0, row=0, padx=100, pady=10)
+
+        shot_prompt = ttk.Label(typeOptionsFrame, text=" Enter ShotNumber")
+        shot_prompt.grid(column=1, row=0, padx=30, pady=10)
+        
+        self.shotnumberEntryBuildRad = ttk.Entry(typeOptionsFrame)
+        self.shotnumberEntryBuildRad.grid(column=1, row=1, padx=30, pady=10)
+        self.shotnumberEntryBuildRad.insert(tk.END, '176863')
+
+        time_prompt = ttk.Label(typeOptionsFrame, text="Enter Time")
+        time_prompt.grid(column=2, row=0, padx=30, pady=10)
+        
+        self.timeEntryBuildRad = ttk.Entry(typeOptionsFrame)
+        self.timeEntryBuildRad.grid(column=2, row=1, padx=30, pady=10)
+        self.timeEntryBuildRad.insert(tk.END, '1660')
+        
+        polsigma_prompt = ttk.Label(typeOptionsFrame, text="Enter PolSigma")
+        polsigma_prompt.grid(column=3, row=0, padx=30, pady=10)
+        
+        self.polsigmaEntryBuildRad = ttk.Entry(typeOptionsFrame)
+        self.polsigmaEntryBuildRad.grid(column=3, row=1, padx=30, pady=10)
+        self.polsigmaEntryBuildRad.insert(tk.END, '.25')
+
+        rgrid_prompt = ttk.Label(typeOptionsFrame, text="Enter Num R Grid" )
+        rgrid_prompt.grid(column=4, row=0, padx=30, pady=10)
+        
+        self.numRgridEntryBuildRad = ttk.Entry(typeOptionsFrame)
+        self.numRgridEntryBuildRad.grid(column=4, row=1, padx=30, pady=10)
+        self.numRgridEntryBuildRad.insert(tk.END, '15')
+        
+
+        zgrid_prompt = ttk.Label(typeOptionsFrame, text="Enter Num Z Grid")
+        zgrid_prompt.grid(column=5, row=0, padx=30, pady=10)
+        
+        self.numZgridEntryBuildRad = ttk.Entry(typeOptionsFrame)
+        self.numZgridEntryBuildRad.grid(column=5, row=1, padx=30, pady=10)
+        self.numZgridEntryBuildRad.insert(tk.END, '30')
+        
         
         radDistType_prompt = ttk.Label(typeOptionsFrame, text="Choose RadDist type")
-        radDistType_prompt.grid(column=0, row=0, padx=30, pady=10)
+        radDistType_prompt.grid(column=6, row=0, padx=30, pady=10)
         
-        radDistTypeOptions = ["Helical", "Toroidal", "M3DC1"]
+        radDistTypeOptions = ["Helical", "Toroidal", "ElongatedRing"]
         buildRadDistType = tk.StringVar(master=typeOptionsFrame)
         buildRadDistType.set(radDistTypeOptions[0])
         radDistMenu = tk.OptionMenu(typeOptionsFrame, buildRadDistType, *radDistTypeOptions)
-        radDistMenu.grid(column=0, row=1, padx=30, pady=10)
+        radDistMenu.grid(column=6, row=1, padx=30, pady=10)
+
         
-        tokamakType_prompt = ttk.Label(typeOptionsFrame, text="Choose Tokamak")
-        tokamakType_prompt.grid(column=1, row=0, padx=30, pady=10)
         
-        tokamakOptions = ["SPARC", "JET"]
-        tokamakName = tk.StringVar(master=typeOptionsFrame)
-        tokamakName.set(tokamakOptions[0])
-        tokamakMenu = tk.OptionMenu(typeOptionsFrame, tokamakName, *tokamakOptions)
-        tokamakMenu.grid(column=1, row=1, padx=30, pady=10)
+        
         
         chooseTypeButton = ttk.Button(typeOptionsFrame, text='Enter',\
             command=lambda:build_options(Container=buildOptionsFrame,\
                                          ErrContainer=errorFrame,\
                                          RadDistType=buildRadDistType.get()))
-        chooseTypeButton.grid(column=2, row=1, ipadx=10, ipady=3)
+        chooseTypeButton.grid(column=7, row=1, ipadx=10, ipady=3)
         
         def build_options(Container, ErrContainer, RadDistType):
             
             build_radDists_error_message(ErrContainer, "Loading")
-                
-            if RadDistType=="Helical" or RadDistType=="M3DC1":
-                build_radDists_error_message(ErrContainer,\
-                                             Message=RadDistType + "s are not yet configured to build from GUI")
-                return 1
-            elif RadDistType=="Toroidal":
-                eqfile=None
             
-            try:
-                if tokamakName.get()=="SPARC":
-                    from RadDist import SPARC
-                    tokamak = SPARC(Mode="Build", Reflections="False", Eqfile = eqfile)
-                elif tokamakName.get()=="JET":
-                    from RadDist import SPARC
-                    tokamak = JET(Mode="Build", Reflections="False", Eqfile = eqfile)
-                    
-                build_radDists_error_message(ErrContainer,\
-                                             Message="Tokamak object built successfully")
-            except:
-                build_radDists_error_message(ErrContainer,\
-                                             Message="Tokamak object could not be built")
-                return 1
+
+
+            shot = int(self.shotnumberEntryBuildRad.get())
+            distType = RadDistType
+            print(distType)
+            eqtime = int(self.timeEntryBuildRad.get())
+            polSigma = float(self.polsigmaEntryBuildRad.get())
+            numRgrid = int(self.numRgridEntryBuildRad.get())
+            numZgrid = int(self.numZgridEntryBuildRad.get())
+
+
+            self.build_Rads(shotnumber = shot, disttype = distType,\
+                             time=eqtime, polsigma = polSigma, NumRStartgrid = numRgrid, \
+                                NumZStartgrid = numZgrid)
+            
+            build_radDists_error_message(ErrContainer, "Completed")
             
         
     def one_timestep(self, Tab):
@@ -132,7 +168,7 @@ class Emis3D_GUI(object):
             
             self.shotnumberEntryOneTimestep = ttk.Entry(controlFrame)
             self.shotnumberEntryOneTimestep.grid(column=0, row=1, padx=30, pady=10)
-            self.shotnumberEntryOneTimestep.insert(tk.END, '95709')
+            self.shotnumberEntryOneTimestep.insert(tk.END, '176863')
         
         etime_prompt = ttk.Label(controlFrame, text="Enter Evaluation Time")
         etime_prompt.grid(column=1, row=0, padx=30, pady=10)
@@ -140,7 +176,7 @@ class Emis3D_GUI(object):
         self.etimeEntry = ttk.Entry(controlFrame)
         self.etimeEntry.grid(column=1, row=1, padx=30, pady=10)
         if self.comparingTo == "Experiment":
-            self.etimeEntry.insert(tk.END, '50.93')
+            self.etimeEntry.insert(tk.END, '1.689')
         elif self.comparingTo == "Simulation":
             self.etimeEntry.insert(tk.END, '0')
         
@@ -194,28 +230,28 @@ class Emis3D_GUI(object):
             
             self.shotnumberEntryRadPowerOverview = ttk.Entry(controlFrame)
             self.shotnumberEntryRadPowerOverview.grid(column=0, row=1, padx=30, pady=10)
-            self.shotnumberEntryRadPowerOverview.insert(tk.END, '95709')
+            self.shotnumberEntryRadPowerOverview.insert(tk.END, '176862')
         
             start_time_prompt = ttk.Label(controlFrame, text="Enter Start Time")
             start_time_prompt.grid(row=0, column=1, padx=30, pady=10)
             
             self.startTimeEntry = ttk.Entry(controlFrame)
             self.startTimeEntry.grid(row=1, column=1, padx=30, pady=10)
-            self.startTimeEntry.insert(tk.END, '50.947')
+            self.startTimeEntry.insert(tk.END, '1.6655')
             
             end_time_prompt = ttk.Label(controlFrame, text="Enter End Time")
             end_time_prompt.grid(row=0, column=2, padx=30, pady=10)
             
             self.endTimeEntry = ttk.Entry(controlFrame)
             self.endTimeEntry.grid(row=1, column=2, padx=30, pady=10)
-            self.endTimeEntry.insert(tk.END, '50.973')
+            self.endTimeEntry.insert(tk.END, '1.6710')
         
             num_times_prompt = ttk.Label(controlFrame, text="Enter Number of Timesteps")
             num_times_prompt.grid(row=0, column=3, padx=30, pady=10)
             
             self.numTimesEntry = ttk.Entry(controlFrame)
             self.numTimesEntry.grid(row=1, column=3, padx=30, pady=10)
-            self.numTimesEntry.insert(tk.END, '53')
+            self.numTimesEntry.insert(tk.END, '55')
         
         pval_mult_prompt = ttk.Label(controlFrame, text="Enter P Value")
         pval_mult_prompt.grid(row=0, column=4, padx=30, pady=10)
@@ -457,7 +493,7 @@ class Emis3D_GUI(object):
         
     def display_fits_channels(self, Container, Emis3DObject, Etime, Column=4, Row=2):
         
-        fig = Emis3DObject.plot_fits_channels(Etime = Etime)
+        fig = Emis3DObject.plot_fits_channels(Etime = Etime, AsBrightness = False)
         
         try: 
             self.boloChannelsCanvas.get_tk_widget().pack_forget()

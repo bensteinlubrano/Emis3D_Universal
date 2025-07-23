@@ -20,7 +20,7 @@ EMIS3D_INPUTS_DIRECTORY = join(EMIS3D_PARENT_DIRECTORY, "Emis3D_Inputs")
 
 class Tokamak(object):
     
-    def __init__(self, TokamakName = "JET", WallFile=None):
+    def __init__(self, TokamakName = "DIIID", WallFile=None):
         
         # Angle conventions used in each tokamak are different from that used in Cherab.
         # Emis3D uses the Cherab angle convention. This angle is subtracted in the evaluate

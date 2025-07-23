@@ -40,7 +40,7 @@ class Bolometer_Camera(Diagnostic):
     Child class of Diagnostic. This is a bolometer camera. 
     '''
         
-    def __init__(self, BoloConfigFiles, World, IndicatorLights=False):
+    def __init__(self, BoloConfigFiles, World, IndicatorLights=True):
         super(Bolometer_Camera,self).__init__(World=World)
         
         self.bolometers = []
@@ -205,7 +205,7 @@ class Synth_Brightness_Observer(Diagnostic):
         CenterPoint = Sphere(Size, parent=self.world,\
             transform=translate(center_point.x, center_point.y, center_point.z))
         CenterPoint.material = UniformSurfaceEmitter(red, 100.0)
-        
+        print("in")
         normal_vector = foil.normal_vector * NormVecSize
         print(normal_vector)
         print("")
